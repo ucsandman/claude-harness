@@ -1,0 +1,359 @@
+{
+  "env": {
+    "DASHCLAW_BEHAVIOR_SAMPLES_ENABLED": "1",
+    "DASHCLAW_BEHAVIOR_SAMPLES_DIR": "C:/Users/sandm/.dashclaw/behavior-samples",
+    "BASH_ENV": "/c/Users/sandm/.claude/load-secrets.sh"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(npm run typecheck)",
+      "Bash(npm run lint)",
+      "Bash(pnpm typecheck)",
+      "Bash(npm view *)",
+      "mcp__claude-in-chrome__tabs_context_mcp",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__take_screenshot",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__take_snapshot",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__list_console_messages",
+      "mcp__plugin_context7_context7__query-docs",
+      "mcp__plugin_context7_context7__resolve-library-id",
+      "mcp__plugin_stripe_stripe__stripe_api_read",
+      "mcp__plugin_stripe_stripe__get_stripe_account_info",
+      "mcp__plugin_stripe_stripe__search_stripe_resources",
+      "mcp__plugin_vercel_vercel__get_project"
+    ],
+    "deny": [
+      "Read(**/.secrets.env)",
+      "Bash(rm -rf /:*)",
+      "Bash(rm -fr /:*)",
+      "Bash(rm -rf ~:*)",
+      "Bash(rm -fr ~:*)"
+    ]
+  },
+  "model": "opus[1m]",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/Users/sandm/.claude/hooks/secret-guard.cjs\"",
+            "timeout": 5,
+            "statusMessage": "Scanning for secrets..."
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "repowise-rewrite",
+            "timeout": 5,
+            "statusMessage": "Distilling command output..."
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "rtk hook claude",
+            "timeout": 5,
+            "statusMessage": "rtk: compressing command..."
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/Users/sandm/.claude/hooks/dev-server-guard.cjs\"",
+            "timeout": 5,
+            "statusMessage": "Checking dev-server hygiene..."
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/Users/sandm/.claude/hooks/process-kill-guard.cjs\"",
+            "timeout": 5,
+            "statusMessage": "Checking process-kill safety..."
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|Task|Workflow",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/Users/sandm/.claude/hooks/agent-model-guard.cjs\"",
+            "timeout": 5,
+            "statusMessage": "Checking subagent model routing..."
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/Users/sandm/.claude/hooks/scope-lock.cjs\"",
+            "timeout": 5,
+            "statusMessage": "Checking scope lock..."
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|Task|Bash|PowerShell|Edit|Write|MultiEdit|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"C:/Projects/DashClaw/hooks/dashclaw_pretool.py\" --agent-id claude-code",
+            "timeout": 3660,
+            "statusMessage": "DashClaw guard check..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "TaskStop",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/Users/sandm/.claude/hooks/dev-server-guard.cjs\"",
+            "timeout": 5,
+            "statusMessage": "Dev-server teardown reminder..."
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|Task|Bash|PowerShell|Edit|Write|MultiEdit|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"C:/Projects/DashClaw/hooks/dashclaw_posttool.py\" --agent-id claude-code"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"C:/Projects/DashClaw/hooks/dashclaw_stop.py\" --agent-id claude-code"
+          },
+          {
+            "type": "command",
+            "command": "python \"C:/Users/sandm/.claude/hooks/sync-main-checkout.py\""
+          },
+          {
+            "type": "command",
+            "command": "python \"C:/Users/sandm/.claude/hooks/skill-telemetry.py\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"C:/Projects/DashClaw/hooks/enforcement_liveness_probe.py\" --agent-id claude-code --source session-start",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python \"C:/Users/sandm/.claude/hooks/session-count.py\"",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node \"C:/Users/sandm/.claude/hooks/opus-handoff-inject.cjs\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"C:/Users/sandm/.claude/hooks/context-nudge.py\"",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node \"C:/Users/sandm/.claude/hooks/scope-lock.cjs\"",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node \"C:/Users/sandm/.claude/hooks/opus-handoff-inject.cjs\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "context7@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "code-review@claude-plugins-official": true,
+    "feature-dev@claude-plugins-official": false,
+    "code-simplifier@claude-plugins-official": false,
+    "superpowers@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "commit-commands@claude-plugins-official": true,
+    "pyright-lsp@claude-plugins-official": true,
+    "pr-review-toolkit@claude-plugins-official": false,
+    "claude-md-management@claude-plugins-official": true,
+    "coderabbit@claude-plugins-official": false,
+    "firecrawl@claude-plugins-official": false,
+    "skill-creator@claude-plugins-official": true,
+    "claude-code-setup@claude-plugins-official": false,
+    "agent-sdk-dev@claude-plugins-official": false,
+    "plugin-dev@claude-plugins-official": false,
+    "example-skills@anthropic-agent-skills": false,
+    "impeccable@impeccable": true,
+    "github@claude-plugins-official": false,
+    "stripe@claude-plugins-official": false,
+    "supergoal@supergoal": true,
+    "codex@openai-codex": true,
+    "obsidian@obsidian-skills": false,
+    "career-ops@career-ops": false,
+    "hunter@claude-plugins-official": false,
+    "windsor-ai@claude-plugins-official": false,
+    "marketing-skills@marketingskills": false,
+    "compound-engineering@compound-engineering-plugin": false,
+    "kiln@kiln": false,
+    "claude-code-capability-primer@capability-primer": true,
+    "repowise@repowise": true,
+    "chrome-devtools-mcp@chrome-devtools-plugins": true,
+    "mcp-server-dev@claude-plugins-official": false,
+    "rust-analyzer-lsp@claude-plugins-official": true,
+    "ui-ux-pro-max@ui-ux-pro-max-skill": true,
+    "vercel@claude-plugins-official": false
+  },
+  "extraKnownMarketplaces": {
+    "claude-design-skillstack": {
+      "source": {
+        "source": "github",
+        "repo": "freshtechbro/claudedesignskills"
+      }
+    },
+    "anthropic-agent-skills": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/skills"
+      }
+    },
+    "everything-claude-code": {
+      "source": {
+        "source": "github",
+        "repo": "affaan-m/everything-claude-code"
+      }
+    },
+    "thedotmack": {
+      "source": {
+        "source": "github",
+        "repo": "thedotmack/claude-mem"
+      }
+    },
+    "impeccable": {
+      "source": {
+        "source": "github",
+        "repo": "pbakaus/impeccable"
+      }
+    },
+    "supergoal": {
+      "source": {
+        "source": "git",
+        "url": "https://github.com/robzilla1738/supergoal.git"
+      }
+    },
+    "openai-codex": {
+      "source": {
+        "source": "github",
+        "repo": "openai/codex-plugin-cc"
+      }
+    },
+    "marketingskills": {
+      "source": {
+        "source": "github",
+        "repo": "coreyhaines31/marketingskills"
+      }
+    },
+    "obsidian-skills": {
+      "source": {
+        "source": "github",
+        "repo": "kepano/obsidian-skills"
+      }
+    },
+    "last30days-skill": {
+      "source": {
+        "source": "github",
+        "repo": "mvanhorn/last30days-skill"
+      }
+    },
+    "career-ops": {
+      "source": {
+        "source": "github",
+        "repo": "santifer/career-ops"
+      }
+    },
+    "compound-engineering-plugin": {
+      "source": {
+        "source": "github",
+        "repo": "EveryInc/compound-engineering-plugin"
+      }
+    },
+    "kiln": {
+      "source": {
+        "source": "github",
+        "repo": "Fredasterehub/kiln"
+      }
+    },
+    "capability-primer": {
+      "source": {
+        "source": "directory",
+        "path": "C:\\Users\\sandm\\.claude\\local-plugins\\claude-code-capability-primer"
+      }
+    },
+    "repowise": {
+      "source": {
+        "source": "github",
+        "repo": "repowise-dev/repowise"
+      }
+    },
+    "chrome-devtools-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "ChromeDevTools/chrome-devtools-mcp"
+      }
+    },
+    "ui-ux-pro-max-skill": {
+      "source": {
+        "source": "github",
+        "repo": "nextlevelbuilder/ui-ux-pro-max-skill"
+      }
+    }
+  },
+  "effortLevel": "high",
+  "autoUpdatesChannel": "latest",
+  "skipDangerousModePermissionPrompt": true,
+  "skipWorkflowUsageWarning": true,
+  "theme": "dark",
+  "remoteControlAtStartup": true,
+  "inputNeededNotifEnabled": true,
+  "agentPushNotifEnabled": true
+}

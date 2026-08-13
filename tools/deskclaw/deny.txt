@@ -1,0 +1,19 @@
+# deskclaw denylist. Substring match, case-insensitive, against
+# "<window title> <process name>". A match SKIPS the window entirely.
+# One pattern per line. Lines starting with # are ignored.
+.env
+.secrets
+secrets.env
+password
+passwd
+credential
+wallet
+seed phrase
+private key
+id_rsa
+.pem
+1password
+bitwarden
+keepass
+lastpass
+authenticator

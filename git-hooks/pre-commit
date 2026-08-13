@@ -1,0 +1,142 @@
+#!/bin/bash
+# Global pre-commit hook. Runs, in order:
+#   1. the repo's own .git/hooks/pre-commit, if it has one
+#   2. secret scan over EVERY staged file, any language
+#   3. manifest gate (silent unless armed for this repo)
+#   4. ruff auto-fix + vulture dead-code report, staged Python only
+# Steps 2 and 3 were added 2026-08-11; before that this hook exited early on any
+# commit with no .py staged, so JS/TS repos got no checks at all.
+# See ~/.claude/docs/manifest-gate.md. Bypass everything: git commit --no-verify.
+
+# ─── 1. Run repo-local hook first (if it exists) ───
+# When core.hooksPath is set, git skips .git/hooks/. We chain manually.
+LOCAL_HOOK=".git/hooks/pre-commit"
+if [ -x "$LOCAL_HOOK" ]; then
+    "$LOCAL_HOOK" "$@"
+    LOCAL_EXIT=$?
+    if [ $LOCAL_EXIT -ne 0 ]; then
+        exit $LOCAL_EXIT
+    fi
+fi
+
+# Also run pre-commit framework if installed (it uses .git/hooks/pre-commit
+# which we already handled above, but some setups use the `pre-commit` command directly)
+
+# ─── 1b. Path handoff to native node ───
+# $HOME here is a POSIX path (/c/Users/sandm). Bash's [ -f ] resolves that fine,
+# but node.exe is a NATIVE Windows binary and reads /c/Users/... as C:\c\Users\...
+# -> MODULE_NOT_FOUND, and the commit dies. MSYS usually auto-converts args, but
+# not reliably from every shell, so convert explicitly. Observed 2026-08-12.
+to_native() {
+    if command -v cygpath &>/dev/null; then
+        cygpath -w "$1"
+    else
+        printf '%s' "$1"
+    fi
+}
+
+# ─── 2. Secrets: scan EVERY staged file, not just Python ───
+# The PreToolUse secret-guard hook only sees Claude Code's own tool calls.
+# Commits made by Codex, by a second agent, or by hand in a terminal never pass
+# through it. This is the last line of defence before a key reaches a commit.
+SECRET_GUARD="$HOME/.claude/hooks/secret-guard.cjs"
+if command -v node &>/dev/null && [ -f "$SECRET_GUARD" ]; then
+    if ! node "$(to_native "$SECRET_GUARD")" --scan-staged; then
+        exit 1
+    fi
+else
+    echo "  ⚠ secret-guard SKIPPED (node or $SECRET_GUARD missing) — staged files were NOT scanned"
+fi
+
+# ─── 3. Manifest gate: does the commit match what was declared? ───
+# Silent unless a manifest is armed for this repo, so quick fixes are untouched.
+# See ~/.claude/docs/manifest-gate.md.
+MANIFEST_GATE="$HOME/.claude/hooks/manifest-gate.cjs"
+if command -v node &>/dev/null && [ -f "$MANIFEST_GATE" ]; then
+    if ! node "$(to_native "$MANIFEST_GATE")" check; then
+        exit 1
+    fi
+fi
+
+# ─── 4. Collect staged Python files ───
+STAGED_PY=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.py$' || true)
+
+if [ -z "$STAGED_PY" ]; then
+    # No Python files staged — nothing to do
+    exit 0
+fi
+
+echo ""
+echo "══════════════════════════════════════════════"
+echo "  Global Hook: Checking Python files"
+echo "══════════════════════════════════════════════"
+
+FAILED=0
+
+# ─── 5. Ruff: lint + auto-fix staged Python files ───
+if command -v ruff &>/dev/null; then
+    echo ""
+    echo "▸ ruff --fix (auto-fixing lint issues)..."
+    echo "$STAGED_PY" | xargs ruff check --fix --quiet 2>&1
+    RUFF_EXIT=$?
+
+    echo "▸ ruff format (auto-formatting)..."
+    echo "$STAGED_PY" | xargs ruff format --quiet 2>&1
+    FORMAT_EXIT=$?
+
+    # Re-stage any files that ruff modified
+    echo "$STAGED_PY" | xargs git add 2>/dev/null
+
+    if [ $RUFF_EXIT -ne 0 ]; then
+        echo ""
+        echo "  ✗ ruff found issues it could not auto-fix:"
+        echo "$STAGED_PY" | xargs ruff check 2>&1
+        FAILED=1
+    else
+        echo "  ✓ ruff passed"
+    fi
+else
+    echo "  ⚠ ruff not found — skipping (pip install ruff)"
+fi
+
+# ─── 6. Vulture: detect dead code (report only, never deletes) ───
+if command -v vulture &>/dev/null; then
+    echo ""
+    echo "▸ vulture (dead code detection, min 60% confidence)..."
+
+    # Run vulture only on staged files. 60% catches dead functions while staying reasonable.
+    # This only REPORTS — it never deletes. You review and decide.
+    VULTURE_OUTPUT=$(echo "$STAGED_PY" | xargs vulture --min-confidence 60 2>&1)
+    VULTURE_EXIT=$?
+
+    if [ $VULTURE_EXIT -ne 0 ] && [ -n "$VULTURE_OUTPUT" ]; then
+        echo ""
+        echo "  ✗ vulture found likely dead code:"
+        echo "$VULTURE_OUTPUT" | head -20
+        echo ""
+        echo "  Review the above. If it's truly dead, delete it manually."
+        echo "  If it's a false positive, add a '# noqa: vulture' comment"
+        echo "  or create a whitelist file."
+        echo ""
+        FAILED=1
+    else
+        echo "  ✓ vulture passed (no dead code detected)"
+    fi
+else
+    echo "  ⚠ vulture not found — skipping (pip install vulture)"
+fi
+
+echo ""
+if [ $FAILED -ne 0 ]; then
+    echo "══════════════════════════════════════════════"
+    echo "  COMMIT BLOCKED — fix the issues above"
+    echo "══════════════════════════════════════════════"
+    echo ""
+    exit 1
+else
+    echo "══════════════════════════════════════════════"
+    echo "  All Python checks passed ✓"
+    echo "══════════════════════════════════════════════"
+    echo ""
+    exit 0
+fi

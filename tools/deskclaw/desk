@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && { pwd -W 2>/dev/null || pwd; })"
+exec pwsh -NoProfile -ExecutionPolicy Bypass -File "$DIR/desk.ps1" "$@"

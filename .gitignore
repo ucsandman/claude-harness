@@ -1,0 +1,94 @@
+# Whitelist: ignore everything, then re-include the durable "Claude brain".
+# Secrets (.secrets.env, keys/, .credentials.json), transcripts, file-history,
+# and caches are excluded by the catch-all and never re-included.
+/*
+!/.gitignore
+!/CLAUDE.md
+# SOUL.md is the top rung of the meditation promotion ladder and the only file
+# /meditate may edit autonomously (2026-08-12). Tracked so every self-edit has a
+# diff and a revert path. Untracked, a bad night was unrecoverable.
+!/SOUL.md
+!/RTK.md
+!/settings.json
+!/keybindings.json
+# The $BASH_ENV loader itself, NOT the secrets it reads. It holds no values —
+# only the code that sources .secrets.env (still excluded, below). Tracked
+# because settings.json points at it and it carries the
+# CLAUDE_HEADLESS_MEDITATION guard, which a rebuild would otherwise lose.
+!/load-secrets.sh
+!/agents
+!/hooks
+# Git hooks (core.hooksPath points here). Lived in ~/.git-hooks until
+# 2026-08-11, which was version controlled nowhere — a single unbacked-up file
+# gating every commit on the machine.
+!/git-hooks
+# Per-session Fable-spawn counter (agent-model-guard state) — churns every
+# session, no history value.
+hooks/.fable-spawn-counts.json
+!/skills
+!/skills-archive
+!/docs
+# Harness tools that live on this machine (deskclaw, 2026-08-12). Default-DENY
+# inside each tool, mirroring the projects/ idiom above. A tool that reads the
+# screen writes screenshots, an audit log and a STOP flag; naming those dirs to
+# exclude them would track any future runtime dir (shots/, logs/, cache/) by
+# accident. Source files are re-included by extension instead.
+!/tools
+tools/*/*
+!tools/*/lib/
+!tools/*/tests/
+!tools/*/*.ps1
+!tools/*/*.md
+# .cjs (2026-08-13): same silent-ignore trap as ears.py below — prove.cjs and
+# fleet.cjs were skipped by the default-deny while their READMEs staged fine.
+!tools/*/*.cjs
+!tools/*/*.txt
+!tools/*/.gitignore
+!tools/*/desk
+# .py + the ears wrapper (2026-08-13): the extract commit shipped README and
+# tests but the tool itself was silently ignored — ears.py never got tracked.
+!tools/*/*.py
+!tools/*/ears
+!/scripts
+!/meditations
+!/commands
+!/workflows
+!/projects
+projects/*/*
+!projects/*/memory
+
+# Belt and braces: even if re-included above by mistake, never these
+.secrets.env
+keys/
+.credentials.json
+*.pem
+*.key
+
+# Memory files containing sk- shaped strings (found 2026-07-10 scan) - keep local only
+projects/C--Projects-DashClaw/memory/project_arch_review_2026_07_03_decision_queue.md
+projects/C--Projects-DashClaw/memory/project_guard_deadline_noise_shipped_2026_07_02.md
+projects/C--Projects-DashClaw/memory/project_june_deferral_triage_shipped_2026_07_02.md
+projects/C--Projects-DashClaw/memory/project_policy_tuning_loop_shipped_2026_07_01.md
+projects/C--Projects-DashClaw/memory/project_risk_observability_shipped_2026_07_02.md
+projects/C--Projects-DashClaw/memory/project_security_review_2026_07_05_open_items.md
+projects/C--Projects-DashClaw/memory/project_work_orders_build_in_progress.md
+projects/C--Projects-DashClaw/memory/reference_dashclaw_risk_calibration_suite.md
+projects/C--Projects-DashClaw/memory/reference_dashclaw_runaway_loop_policy.md
+projects/C--Projects-DashClaw/memory/reference_guard_risk_blend_and_operator_approval.md
+projects/C--Projects-DashClaw/memory/reference_local_ci_replica_gotchas.md
+projects/C--Users-sandm-clawd/memory/task-grade-adapter-build.md
+
+# --- runtime + secrets hardening (2026-07-11, impact-roadmap session) ---
+# Script runtime output and state churn every poll; .env files carry live keys.
+scripts/*/.env
+scripts/*/out/
+scripts/*/run.log
+scripts/*/state.json
+scripts/*/history.jsonl
+scripts/**/__pycache__/
+scripts/*/.dashclaw-local/
+scripts/*/.offlocal/
+scripts/fleet-briefing/%SystemDrive%/
+telemetry/
+scripts/harness-audit/reports/
+scripts/harness-audit/last-audit-output.txt
