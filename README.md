@@ -28,8 +28,8 @@ Three examples of what that means:
 | `settings.json` | Hook wiring, permissions, env. Secrets live in a separate untracked file it points at. |
 | `hooks/` | PreToolUse and lifecycle guards: secret-guard, process-kill-guard, agent-model-guard, manifest-gate, scope-lock, and friends. |
 | `git-hooks/` | The global pre-commit chain (`core.hooksPath`). Secret scan, manifest gate, Python lint gate. |
-| `tools/` | Small zero-dependency tools the agent uses: spend ledger, memory search, repo status board, scheduled-job health, secrets-wiring checkup, desktop eye, TTS, process ledger, check-breaker, session fleet monitor. Each has its own README. |
-| `scripts/` | Scheduled jobs: nightly meditation, morning fleet briefing, deploy sentinel, harness health audit. |
+| `tools/` | Small zero-dependency tools the agent uses: spend ledger, memory search, repo status board, scheduled-job health, secrets-wiring checkup, desktop eye, TTS, process ledger, check-breaker, session fleet monitor, error log harvester, doc gates. Each has its own README. |
+| `scripts/` | The scheduled jobs: error log harvest, nightly meditation, morning fleet briefing, deploy sentinel, weekly harness audit, health check. `install-scheduled-tasks.ps1` registers the ones that ship here (plan only, `-Execute` to apply). |
 | `agents/` | Subagent definitions with explicit model routing (cheap scout, mid implementer, security reviewer). |
 | `docs/` | The reference docs CLAUDE.md points at, plus `reddit-claude-setup-share.md`, a guided tour written to be pasted into Claude Code and adapted to your project. |
 | `meditations/` | The nightly reflection loop and the promotion ladder. **Templates here**, see below. |
@@ -59,6 +59,12 @@ private. The mechanism, the gates, and the write rails are all here unchanged.
 - `.secrets.env` and anything else untracked. The repo never contained
   credentials, and this mirror was swept file by file and through full history
   patterns before publishing.
+- Four docs `CLAUDE.md` points at stay private because they map my machines and
+  business context: `machine-facts.md`, `doc-standard.md`, `decision-notes.md`,
+  `plugin-hygiene.md`. Those pointers will not resolve in a clone.
+- The scheduled jobs that drive product repos (licence fulfilment, order
+  checks, outreach drainers) and the autonomous company that runs on top of
+  this harness. Different repos, private.
 
 ## Using it
 

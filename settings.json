@@ -2,7 +2,11 @@
   "env": {
     "DASHCLAW_BEHAVIOR_SAMPLES_ENABLED": "1",
     "DASHCLAW_BEHAVIOR_SAMPLES_DIR": "C:/Users/sandm/.dashclaw/behavior-samples",
-    "BASH_ENV": "/c/Users/sandm/.claude/load-secrets.sh"
+    "BASH_ENV": "/c/Users/sandm/.claude/load-secrets.sh",
+    "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS": "8",
+    "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "2",
+    "ENABLE_PROMPT_CACHING_1H": "1",
+    "CLAUDE_CODE_ENABLE_TODO_TOOLS": "1"
   },
   "permissions": {
     "allow": [
@@ -23,13 +27,29 @@
     ],
     "deny": [
       "Read(**/.secrets.env)",
+      "Read(**/claude_desktop_config.json)",
+      "Read(**/anythink-cli/.claude/settings.local.json)",
       "Bash(rm -rf /:*)",
       "Bash(rm -fr /:*)",
       "Bash(rm -rf ~:*)",
       "Bash(rm -fr ~:*)"
+    ],
+    "ask": [
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(vercel deploy:*)",
+      "Bash(vercel --prod:*)",
+      "Bash(npx prisma migrate deploy:*)",
+      "Bash(prisma migrate deploy:*)",
+      "Bash(npx prisma db push:*)",
+      "Bash(npm audit fix --force:*)"
     ]
   },
   "model": "opus[1m]",
+  "fallbackModel": [
+    "sonnet",
+    "haiku"
+  ],
   "hooks": {
     "PreToolUse": [
       {
@@ -119,6 +139,17 @@
             "statusMessage": "DashClaw guard check..."
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -File \"C:/Users/sandm/.claude/hooks/bg-test-guard.ps1\"",
+            "timeout": 10,
+            "statusMessage": "Checking background-test hygiene..."
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -141,6 +172,28 @@
             "command": "python \"C:/Projects/DashClaw/hooks/dashclaw_posttool.py\" --agent-id claude-code"
           }
         ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/Users/sandm/.claude/hooks/repeat-tool-guard.cjs\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/Users/sandm/.claude/hooks/repeat-tool-guard.cjs\"",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "Stop": [
@@ -158,6 +211,12 @@
             "type": "command",
             "command": "python \"C:/Users/sandm/.claude/hooks/skill-telemetry.py\"",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -Command \"(New-Object Media.SoundPlayer 'C:\\Windows\\Media\\Windows Notify System Generic.wav').PlaySync()\"",
+            "timeout": 10,
+            "async": true
           }
         ]
       }
@@ -179,6 +238,12 @@
             "type": "command",
             "command": "node \"C:/Users/sandm/.claude/hooks/opus-handoff-inject.cjs\"",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -File \"C:/Users/sandm/.claude/hooks/guard-canary.ps1\"",
+            "timeout": 60,
+            "statusMessage": "Guard canary: proving safety hooks still deny..."
           }
         ]
       }
@@ -200,11 +265,47 @@
             "type": "command",
             "command": "node \"C:/Users/sandm/.claude/hooks/opus-handoff-inject.cjs\"",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "pwsh -NoProfile -File \"C:/Users/sandm/.claude/hooks/correction-tracker.ps1\"",
+            "timeout": 10,
+            "statusMessage": "Correction tracker..."
+          },
+          {
+            "type": "command",
+            "command": "node \"C:/Users/sandm/.claude/hooks/repeat-tool-guard.cjs\" --reset",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "MessageDisplay": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/Users/sandm/.claude/hooks/output-secret-watch.cjs\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/Users/sandm/.claude/hooks/no-auto-compact.cjs\"",
+            "timeout": 5,
+            "statusMessage": "Checking auto-compact policy..."
           }
         ]
       }
     ]
   },
+  "statusLine": {"type":"command","command":"node \"C:\\\\Users\\\\sandm\\\\.kickbacks\\\\vibe-ads-statusline.mjs\"","padding":0},
   "enabledPlugins": {
     "context7@claude-plugins-official": true,
     "frontend-design@claude-plugins-official": true,
@@ -242,7 +343,9 @@
     "mcp-server-dev@claude-plugins-official": false,
     "rust-analyzer-lsp@claude-plugins-official": true,
     "ui-ux-pro-max@ui-ux-pro-max-skill": true,
-    "vercel@claude-plugins-official": false
+    "vercel@claude-plugins-official": true,
+    "core-3d-animation@claude-design-skillstack": true,
+    "ponytail@ponytail": true
   },
   "extraKnownMarketplaces": {
     "claude-design-skillstack": {
@@ -255,18 +358,6 @@
       "source": {
         "source": "github",
         "repo": "anthropics/skills"
-      }
-    },
-    "everything-claude-code": {
-      "source": {
-        "source": "github",
-        "repo": "affaan-m/everything-claude-code"
-      }
-    },
-    "thedotmack": {
-      "source": {
-        "source": "github",
-        "repo": "thedotmack/claude-mem"
       }
     },
     "impeccable": {
@@ -346,14 +437,22 @@
         "source": "github",
         "repo": "nextlevelbuilder/ui-ux-pro-max-skill"
       }
+    },
+    "ponytail": {
+      "source": {
+        "source": "github",
+        "repo": "DietrichGebert/ponytail"
+      }
     }
   },
-  "effortLevel": "high",
+  "spinnerVerbs": {"mode":"replace","verbs":["Mimio - Get the Benefits of Fasting, Without the Fasting"]},
+  "effortLevel": "xhigh",
   "autoUpdatesChannel": "latest",
   "skipDangerousModePermissionPrompt": true,
   "skipWorkflowUsageWarning": true,
   "theme": "dark",
   "remoteControlAtStartup": true,
+  "crossSessionInbound": "hold",
   "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true
 }

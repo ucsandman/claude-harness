@@ -361,7 +361,15 @@ if (toolName === "Workflow") {
       );
     }
     const ranges = fanoutRanges(script, masked);
-    const fannedOut = fableCalls.some((c) => ranges.some(([s, e]) => c.index >= s && c.index < e));
+    // Coarse on purpose. This used to require the fable call's own character
+    // offset to fall INSIDE a fan-out span, which one helper function defeats:
+    //   const spawn = () => agent({model:'fable'})   // outside every loop
+    //   for (let i=0;i<50;i++) await spawn()         // 50 Fable agents, allowed
+    // A lexical hook cannot follow that call graph, so it stops trying: a fable
+    // call anywhere in a script that fans out anywhere is denied. The asymmetry
+    // justifies it — a false positive costs one KILL-style marker append, a
+    // false negative cost a full 5-hour usage window on 2026-06-12.
+    const fannedOut = ranges.length > 0;
     if (fannedOut) {
       deny(
         "BLOCKED: this Workflow script spawns a fable-model agent() inside a fan-out construct (parallel/pipeline/map/loop) — one call site there can multiply into a fleet of Fable agents (the 2026-06-12 incident spawned 110 and burned a full 5h usage window). " +

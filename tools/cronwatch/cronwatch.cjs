@@ -433,6 +433,16 @@ function main() {
 
   if (args.open) openFile(OUT_HTML);
 
+  // Exit nonzero when something is actually broken, so cronwatch's OWN Last
+  // Result is meaningful once it runs on a schedule. Without this it always
+  // exited 0 and the silent-failure detector was itself silent — which is how
+  // "DashClaw Traffic Poll" failed ~40 mornings unseen.
+  const broken = shown.filter((t) => t.classification === 'FAILED').length;
+  if (broken > 0) {
+    console.error(`[cronwatch] ${broken} scheduled task(s) FAILED — see ${OUT_HTML}`);
+    process.exit(1);
+  }
+
   process.exit(0);
 }
 

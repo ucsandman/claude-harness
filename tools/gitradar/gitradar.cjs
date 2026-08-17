@@ -358,8 +358,65 @@ function openFile(filePath) {
   spawn('cmd', ['/c', 'start', '', filePath], { detached: true, stdio: 'ignore' }).unref();
 }
 
+// ---------------------------------------------------------------- selftest
+// Pins the one thing this tool exists for: a git command that FAILS must never
+// look like a git command that returned nothing. The founding bug was six
+// `git -C /c/Projects/X` calls reporting "0 commits in 24h" across repos that
+// had 27, because git.exe rejected the MSYS path and stderr was suppressed.
+function selftest() {
+  let pass = 0, fail = 0;
+  const ok = (name, cond) => { if (cond) { pass++; } else { fail++; console.log('FAIL: ' + name); } };
+
+  // --- a failing git call must be loudly distinguishable from an empty one --
+  const missing = runGit('C:/nope-this-path-does-not-exist-gitradar-selftest', ['status', '--porcelain']);
+  ok('missing repo is not ok', missing.ok === false);
+  ok('missing repo carries real stderr', missing.stderr.trim().length > 0);
+  ok('missing repo has empty stdout', missing.stdout === '');
+  // The founding bug in one line: empty stdout alone must NEVER read as success.
+  ok('CONTRACT: empty stdout + not-ok is a failure, not zero commits',
+     !(missing.ok === true && missing.stdout === ''));
+
+  // MSYS-style path handed to git.exe — the exact shape that caused the bug.
+  // Either git accepts it (ok) or rejects it (ok:false + stderr). What must
+  // never happen is a silent ok:true with no output.
+  const msys = runGit('/c/nope-this-path-does-not-exist-gitradar-selftest', ['status', '--porcelain']);
+  ok('CONTRACT: MSYS path never silently succeeds empty',
+     msys.ok === false ? msys.stderr.trim().length > 0 : true);
+
+  // --- error rows always carry a message ----------------------------------
+  const withStderr = errorResult('r', 'C:/r', 'git status', { stderr: 'fatal: not a git repository', status: 128 });
+  ok('error row is flagged', withStderr.error === true);
+  ok('error row uses real stderr', /not a git repository/.test(withStderr.errorMsg));
+
+  // Empty stderr must still produce a message, never a blank cell.
+  const noStderr = errorResult('r', 'C:/r', 'git status', { stderr: '', status: 128 });
+  ok('empty stderr still yields a message', noStderr.errorMsg.length > 0);
+  ok('empty stderr message names the exit code', /128/.test(noStderr.errorMsg));
+
+  // --- worst-first ordering ------------------------------------------------
+  const clean = { name: 'clean', dirtyCount: 0, unpushedCount: 0, goneCount: 0 };
+  const dirty = { name: 'dirty', dirtyCount: 3, unpushedCount: 0, goneCount: 0 };
+  const unpushed = { name: 'unpushed', dirtyCount: 0, unpushedCount: 1, goneCount: 0 };
+  const noUp = { name: 'noUp', dirtyCount: 0, unpushedCount: 0, goneCount: 0, noUpstream: true };
+  const err = { name: 'err', error: true };
+  ok('error outranks everything', severity(err) > severity(noUp));
+  ok('no-upstream outranks unpushed', severity(noUp) > severity(unpushed));
+  ok('unpushed outranks dirty', severity(unpushed) > severity(dirty));
+  ok('dirty outranks clean', severity(dirty) > severity(clean));
+
+  const order = sortWorstFirst([clean, dirty, err, unpushed, noUp]).map((r) => r.name);
+  ok('sorted worst-first', order.join(',') === 'err,noUp,unpushed,dirty,clean');
+  // An ERROR row must never sort below a merely-dirty one — that is how a
+  // broken scan hides at the bottom of the board.
+  ok('CONTRACT: error never sorts below dirty', order.indexOf('err') < order.indexOf('dirty'));
+
+  console.log(`\n${pass} passed / ${fail} failed`);
+  process.exit(fail ? 1 : 0);
+}
+
 function main() {
   const args = process.argv.slice(2);
+  if (args.includes('--selftest')) return selftest();
   const doOpen = args.includes('--open');
 
   let results;

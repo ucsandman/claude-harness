@@ -1,0 +1,15 @@
+{
+  "_comment": "Word ceilings for standing docs — prose an agent is expected to trust in every session. Append-only logs (docs/ERRORS.md), audits, and working material are deliberately unbudgeted. See tools/gates/README.md. This is the public-mirror copy: it lists only the docs that ship here, because a budgeted file that does not exist is a gate failure.",
+  "_purpose": "These are anti-growth ratchets, not reduction targets. There is no goal word count. A ceiling exists so a doc cannot grow without someone noticing; when one goes red the answer is to move a section into its own file and leave an index line behind, never to delete a rule or drop a pointer. Raising a ceiling with a reason in the commit is a legitimate outcome.",
+  "CLAUDE.md": 5400,
+  "SOUL.md": 800,
+  "RTK.md": 200,
+  "docs/opus-handoff.md": 600,
+  "docs/human-experience.md": 800,
+  "docs/token-cache-discipline.md": 500,
+  "docs/windows-gotchas.md": 500,
+  "docs/harness-guards.md": 700,
+  "docs/new-project-setup.md": 200,
+  "docs/manifest-gate.md": 850,
+  "docs/browser-qa.md": 1650
+}

@@ -138,6 +138,19 @@ function mergeBucketInto(target, src) {
   target.messages += src.messages;
 }
 
+// Claude Code writes one JSONL line per content block; every block of the same
+// assistant turn repeats the same message.id and the same CUMULATIVE usage, so
+// counting a turn twice inflates the bill. Blocks of a turn are contiguous, so
+// comparing against the previously counted id is enough. Extracted from the
+// read loop so --selftest can pin it: a regression here silently produces
+// wrong dollar figures, with nothing that looks broken.
+function shouldCount(rec, lastMessageId) {
+  if (!rec || rec.type !== 'assistant' || !rec.message || !rec.message.usage) return false;
+  const id = rec.message.id;
+  if (!id) return false;
+  return id !== lastMessageId;
+}
+
 // dollars for one (model, bucket) pair. null if the model has no price entry.
 function costForBucket(model, bucket) {
   const tier = tierFor(model);
@@ -218,13 +231,8 @@ async function processFile(filePath, stat, cachedEntry) {
       } catch (e) {
         return; // skip unparseable/torn lines (e.g. read raced a mid-write)
       }
-      if (rec.type !== 'assistant' || !rec.message || !rec.message.usage) return;
+      if (!shouldCount(rec, lastMessageId)) return;
       const msg = rec.message;
-      if (!msg.id) return;
-      // Claude Code writes one JSONL line per content block; every block of
-      // the same assistant turn repeats the same message.id and the same
-      // cumulative usage. Only count a turn once, on its first line.
-      if (msg.id === lastMessageId) return;
       lastMessageId = msg.id;
       const day = dayKey(rec.timestamp);
       const model = msg.model || 'unknown';
@@ -598,8 +606,85 @@ function openFile(filePath) {
   spawn('cmd', ['/c', 'start', '', filePath], { detached: true, stdio: 'ignore' }).unref();
 }
 
+// ---------------------------------------------------------------- selftest
+// Pins the arithmetic and the dedup that turn transcripts into dollars.
+// Pure and in-process: no filesystem, no network, no git.
+function selftest() {
+  let pass = 0, fail = 0;
+  const ok = (name, cond) => { if (cond) { pass++; } else { fail++; console.log('FAIL: ' + name); } };
+
+  // --- tier routing -------------------------------------------------------
+  ok('opus tier', tierFor('claude-opus-5') === 'opus');
+  ok('sonnet tier', tierFor('claude-sonnet-5') === 'sonnet');
+  ok('haiku tier', tierFor('claude-haiku-4-5-20251001') === 'haiku');
+  ok('fable tier', tierFor('claude-fable-5') === 'fable');
+  ok('retired opus id still prices as opus', tierFor('claude-opus-4-8') === 'opus');
+  ok('unknown model has no tier', tierFor('gpt-4') === null);
+  ok('missing model has no tier', tierFor(undefined) === null);
+
+  // --- usage accumulation -------------------------------------------------
+  const b = emptyBucket();
+  addUsage(b, { input_tokens: 100, output_tokens: 20, cache_read_input_tokens: 500,
+                cache_creation: { ephemeral_5m_input_tokens: 40, ephemeral_1h_input_tokens: 7 } });
+  ok('input counted', b.input === 100);
+  ok('output counted', b.output === 20);
+  ok('cache read counted', b.cacheRead === 500);
+  ok('5m write counted', b.cacheWrite5m === 40);
+  ok('1h write counted', b.cacheWrite1h === 7);
+  ok('message counted', b.messages === 1);
+
+  // Shape drift: a flat total with no breakdown must land in 5m, not vanish.
+  const flat = emptyBucket();
+  addUsage(flat, { cache_creation_input_tokens: 900 });
+  ok('flat cache total is not dropped', flat.cacheWrite5m === 900);
+  ok('flat cache total does not double into 1h', flat.cacheWrite1h === 0);
+
+  // A breakdown present must win over the flat total, never add to it.
+  const both = emptyBucket();
+  addUsage(both, { cache_creation_input_tokens: 900, cache_creation: { ephemeral_5m_input_tokens: 10 } });
+  ok('breakdown wins over flat total', both.cacheWrite5m === 10);
+
+  const merged = emptyBucket();
+  mergeBucketInto(merged, b);
+  mergeBucketInto(merged, b);
+  ok('merge sums input', merged.input === 200);
+  ok('merge sums messages', merged.messages === 2);
+
+  // --- cost ---------------------------------------------------------------
+  ok('unpriced model yields null, not 0', costForBucket('gpt-4', b) === null);
+  const oneMil = { ...emptyBucket(), input: 1e6 };
+  ok('1M sonnet input == base rate', Math.abs(costForBucket('claude-sonnet-5', oneMil) - PRICES.sonnet.in) < 1e-9);
+  const oneMilRead = { ...emptyBucket(), cacheRead: 1e6 };
+  ok('cache read is 10x cheaper than input',
+     Math.abs(costForBucket('claude-sonnet-5', oneMilRead) - PRICES.sonnet.in * CACHE_READ_MULT) < 1e-9);
+  ok('cache read costs less than fresh input',
+     costForBucket('claude-sonnet-5', oneMilRead) < costForBucket('claude-sonnet-5', oneMil));
+  ok('empty bucket is free', costForBucket('claude-opus-5', emptyBucket()) === 0);
+  ok('opus costs more than haiku for identical usage',
+     costForBucket('claude-opus-5', b) > costForBucket('claude-haiku-4-5-20251001', b));
+
+  // --- dedup (the expensive one to get wrong) -----------------------------
+  const turn = (id) => ({ type: 'assistant', message: { id, usage: {} } });
+  ok('first block of a turn counts', shouldCount(turn('m1'), null) === true);
+  ok('second block of the SAME turn does not', shouldCount(turn('m1'), 'm1') === false);
+  ok('a new turn counts', shouldCount(turn('m2'), 'm1') === true);
+  ok('user records never count', shouldCount({ type: 'user', message: { id: 'm3', usage: {} } }, null) === false);
+  ok('a record with no usage never counts', shouldCount({ type: 'assistant', message: { id: 'm4' } }, null) === false);
+  ok('a record with no id never counts', shouldCount({ type: 'assistant', message: { usage: {} } }, null) === false);
+  ok('garbage never counts', shouldCount(null, null) === false);
+  // Negative control — documents the contract rather than asserting a wish:
+  // dedup is CONSECUTIVE-only. If Claude Code ever interleaves turns, this
+  // flips and the bill double-counts. This assertion is the tripwire.
+  ok('CONTRACT: a repeated id after a different id counts again',
+     shouldCount(turn('m1'), 'm2') === true);
+
+  console.log(`\n${pass} passed / ${fail} failed`);
+  process.exit(fail ? 1 : 0);
+}
+
 async function main() {
   const args = process.argv.slice(2);
+  if (args.includes('--selftest')) return selftest();
   const doOpen = args.includes('--open');
 
   const daysIdx = args.indexOf('--days');

@@ -35,6 +35,16 @@ const DENY_RULES = [
     instead: 'Stop-Process -Id <pid>',
   },
   {
+    // Indirect invocation: `$c = "Stop-Process"; & $c -Name notepad`.
+    // The rules above look for the literal cmdlet inside ONE ;-delimited
+    // clause, so they cannot see a name built in an earlier statement.
+    // Any dynamic invocation carrying -Name is unverifiable by definition —
+    // the guard cannot know what the variable holds — so it is denied.
+    re: /(?:&\s*\$\w+|\biex\b|\bInvoke-Expression\b)(?=[^|;\r\n]*?\s-Name\b)/i,
+    what: 'a name-based kill through variable or expression indirection',
+    instead: 'Stop-Process -Id <pid>  (invoke the cmdlet directly, by PID)',
+  },
+  {
     re: /\bGet-Process\b(?![^|;\r\n]*?-Id\b)[^|;\r\n]*\|\s*(?:Stop-Process|spps|kill)\b/i,
     what: 'Get-Process <name> piped into Stop-Process',
     instead:

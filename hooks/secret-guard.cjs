@@ -216,12 +216,16 @@ function main() {
       }
       if (typeof input.new_string === 'string') texts.push(input.new_string);
       break;
-    case 'Bash': {
+    // PowerShell is a first-class tool on this machine and is in the matcher
+    // (Write|Edit|MultiEdit|Bash|PowerShell). Without this case it fell to
+    // `default: exit(0)` and every scan below was a no-op on half the surface.
+    case 'Bash':
+    case 'PowerShell': {
       // Block staging a real .env file (secrets must stay out of git).
       const env = gitAddsRealEnvFile(input.command);
       if (env) {
         deny(
-          `Blocked: the Bash command stages "${env}" into git. ` +
+          `Blocked: the ${toolName} command stages "${env}" into git. ` +
             `A .env file holds secrets and must stay gitignored, never committed. ` +
             `Stage a .env.example with placeholders instead, or confirm this is intentional.`
         );
@@ -235,11 +239,12 @@ function main() {
   }
 
   // File-write tools: real env files legitimately hold secrets, so allow them.
-  if (toolName !== 'Bash' && isRealEnvFile(filePath)) process.exit(0);
+  const isCommandTool = toolName === 'Bash' || toolName === 'PowerShell';
+  if (!isCommandTool && isRealEnvFile(filePath)) process.exit(0);
 
   const where = filePath
     ? `file "${filePath.replace(/\\/g, '/').split('/').pop()}"`
-    : 'the Bash command';
+    : `the ${toolName} command`;
 
   for (const t of texts) {
     const hit = scanForSecret(t);
