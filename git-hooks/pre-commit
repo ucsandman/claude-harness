@@ -58,6 +58,35 @@ if command -v node &>/dev/null && [ -f "$MANIFEST_GATE" ]; then
     fi
 fi
 
+# ─── 3b. Harness doc gates (this repo only) ───
+# Word budgets, dead references, decision-note format, expired rules. Runs only
+# inside ~/.claude, only when a .md, settings.json, or SKILL.md is staged.
+# Everywhere else this is a no-op. See ~/.claude/docs/doc-standard.md.
+# `git rev-parse --show-toplevel` returns a Windows path (C:/Users/sandm/.claude)
+# while $HOME is POSIX (/c/Users/sandm). Comparing them raw always fails and the
+# gates silently never run — the same MSYS mismatch as the node handoff above.
+# `cd && pwd` normalises both to the POSIX form.
+HARNESS_ROOT=$(cd "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null && pwd)
+HARNESS_EXPECT=$(cd "$HOME/.claude" 2>/dev/null && pwd)
+GATES="$HOME/.claude/tools/gates/gates.cjs"
+if [ -n "$HARNESS_ROOT" ] && [ "$HARNESS_ROOT" = "$HARNESS_EXPECT" ] && [ -f "$GATES" ] && command -v node &>/dev/null; then
+    if git diff --cached --name-only --diff-filter=ACM | grep -qE '\.md$|settings\.json$'; then
+        echo ""
+        echo "▸ harness doc gates..."
+        if ! node "$(to_native "$GATES")" doc-budgets md-links ref-ratchet note-format rule-expiry; then
+            echo ""
+            echo "  ✗ doc gates failed — see ~/.claude/docs/doc-standard.md"
+            echo "    (move a section to its own file and leave an index line;"
+            echo "     never delete a rule or drop a pointer to meet a number)"
+            exit 1
+        fi
+        # Regenerate rather than reject: the gate above already blocked any
+        # DROPPED pointer, so anything left is a new reference this commit added.
+        # Recording it here is what puts the new pointer under the ratchet too.
+        node "$(to_native "$GATES")" --accept-refs >/dev/null && git add "$HOME/.claude/tools/gates/references.json"
+    fi
+fi
+
 # ─── 4. Collect staged Python files ───
 STAGED_PY=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.py$' || true)
 
@@ -106,7 +135,17 @@ if command -v vulture &>/dev/null; then
 
     # Run vulture only on staged files. 60% catches dead functions while staying reasonable.
     # This only REPORTS — it never deletes. You review and decide.
-    VULTURE_OUTPUT=$(echo "$STAGED_PY" | xargs vulture --min-confidence 60 2>&1)
+    # Always include the repo's whitelist when it has one: without this, the
+    # whitelist only worked when it happened to be staged itself, so committing
+    # a file with a whitelisted symbol was blocked by its own false positive.
+    VULTURE_WHITELIST=""
+    if [ -f ".vulture_whitelist.py" ]; then
+        VULTURE_WHITELIST=".vulture_whitelist.py"
+    elif [ -f "vulture_whitelist.py" ]; then
+        # Older repos (pre-2026-08-11) named it without the leading dot.
+        VULTURE_WHITELIST="vulture_whitelist.py"
+    fi
+    VULTURE_OUTPUT=$(echo "$STAGED_PY" | xargs vulture --min-confidence 60 $VULTURE_WHITELIST 2>&1)
     VULTURE_EXIT=$?
 
     if [ $VULTURE_EXIT -ne 0 ] && [ -n "$VULTURE_OUTPUT" ]; then
