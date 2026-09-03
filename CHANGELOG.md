@@ -5,6 +5,13 @@ underlying changes usually landed over the preceding days.
 
 ## 2026-09-03 (seventh sync)
 
+- Rule 7, "Learn on every handoff": every gate (approval, ship, wrap, a
+  correction) ends with a written retro naming one change, filed where the
+  next session reads it in the same turn. Approval artifacts pass the stranger
+  test (labels, timings, narration per frame, one line saying what it is) and
+  are rendered and read before handoff. Machine facts and versions come from
+  the machine or the live release page, never from memory. Written after an
+  unlabeled storyboard tile and two asserted-from-memory targets in one day.
 - `tools/memstale/`: memory provenance check. Every absolute path a memory
   file names is checked against the disk; the verdict carries its counts
   (`memories=824 paths_checked=598 missing=63 stale_memories=48` on first run).

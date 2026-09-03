@@ -28,7 +28,7 @@ reads outside the repo.
 3. `declick run <name> <verb> … --fields a,b --limit N` — trimmed JSON, exit 0 ok.
 
 A page's links, buttons and inputs: `declick web tree <url> --selector <css> --limit 20`.
-Whether a page says X: `curl -s <url> | grep -c X` (rtk trims it). WebFetch only
+Whether a page says X: `declick web text <url> --grep X`. WebFetch only
 for prose that needs summarising. A native window: `declick desk tree <title>
 --interactive`; `declick desk read <title> "<Type:Name>"` for one value. A
 screenshot only for a layout or canvas question.

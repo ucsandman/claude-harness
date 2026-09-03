@@ -70,7 +70,7 @@ function advise(tool, input) {
         key: 'web',
         text: 'declick first: a page is a tree, not a screenshot or DOM dump. '
           + '`declick web tree <url> --selector <css> --limit 20` returns its links, buttons and inputs as JSON, '
-          + 'and `curl -s <url> | grep -c <text>` answers "does the page say X", both at a fraction of a '
+          + 'and `declick web text <url> --grep <text>` answers "does the page say X", both at a fraction of a '
           + 'read_page/computer result. Use the Chrome tools only for a click, a form, or a visual (layout, canvas) question.',
       };
     }
@@ -93,7 +93,7 @@ function advise(tool, input) {
       key: 'web',
       text: 'declick first: for an HTML page, `declick web tree '
         + `${url} --selector <css> --limit 20\` returns its links, buttons and inputs as JSON and `
-        + `\`curl -s ${url} | grep -c <text>\` answers "does the page say X", `
+        + `\`declick web text ${url} --grep <text>\` answers "does the page say X", `
         + 'instead of the whole page through WebFetch. Keep WebFetch for a JSON or text endpoint, or when you '
         + 'need prose summarised.',
     };
