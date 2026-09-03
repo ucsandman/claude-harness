@@ -104,7 +104,7 @@ Applies when another agent shares this repo or `~\clawd\agent-comms\inbox\` hold
 
 ## Setup and Preferences
 
-GitHub: respect the active user/org context; verify `git remote -v` before pushing. Docs: Context7 MCP for any library or API docs and setup steps. Browser QA: scripted Playwright headless; logged-in sessions via debugging port. Toolchain: the repo's existing Node version, package manager, test runner, linter, formatter, build tool. Config via `.env` files, not terminal env vars. Mock before you wire: new UI features get an interactive HTML mock first.
+GitHub: respect the active user/org context; verify `git remote -v` before pushing. A harness commit (`~/.claude`) has two destinations: push to `claude-config`, then mirror to the public `claude-harness` in the same turn (`node ~/.claude/scripts/mirror-sync.cjs`, CHANGELOG entry, commit, push); a rule change also lands in `agnostic-ai` and is synced. "Push everything" means all of them (Wes, 2026-09-03). Docs: Context7 MCP for any library or API docs and setup steps. Browser QA: scripted Playwright headless; logged-in sessions via debugging port. Toolchain: the repo's existing Node version, package manager, test runner, linter, formatter, build tool. Config via `.env` files, not terminal env vars. Mock before you wire: new UI features get an interactive HTML mock first.
 
 ## Communication and Output
 

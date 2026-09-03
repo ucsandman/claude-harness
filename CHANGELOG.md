@@ -17,6 +17,8 @@ underlying changes usually landed over the preceding days.
   outbound channel never share one task), "thoughts?" means discuss not do, and
   a fix loop never edits test files (also in the sonnet-implementer brief).
   Pattern source: jde-projects.com/ai-setup/running-claude-code.
+- Working agreement: a harness commit has two destinations, the private config
+  repo and this mirror, pushed in the same turn.
 
 ## 2026-09-03 (fifth sync)
 
