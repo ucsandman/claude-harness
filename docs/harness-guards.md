@@ -17,7 +17,8 @@ Order:
 1. The repo's own `.git/hooks/pre-commit`, if it has one. When `core.hooksPath`
    is set git skips `.git/hooks/`, so the chain is manual.
 2. `secret-guard.cjs --scan-staged` over **every** staged file, any language.
-3. The manifest gate (silent unless armed for this repo).
+3. A manifest-gate step that no longer runs: the hook was retired to
+   `hooks/archive/` in 2026-09 and the step skips when the file is absent.
 4. Harness doc gates, inside `~/.claude` only, when a `.md` or `settings.json`
    is staged.
 5. On staged `.py` only: `ruff` auto-fixes imports and format, `vulture` reports
@@ -36,14 +37,6 @@ fine, but `node.exe` is a native Windows binary and reads `/c/Users/...` as
 `C:\c\Users\...`, so the commit dies with MODULE_NOT_FOUND. MSYS usually
 auto-converts arguments but not reliably from every shell, so the hook converts
 explicitly with `cygpath -w`. Observed 2026-08-12.
-
-## manifest-gate.cjs
-
-The only **output**-side guard. Declare intended paths and acceptance criteria
-up front; the commit is blocked if it touches anything undeclared or a
-`--verify` command fails. Opt-in per repo, silent when unarmed. Arm it for any
-task where surgical changes actually matter. Full contract:
-[manifest-gate.md](manifest-gate.md).
 
 ## agent-model-guard.cjs
 

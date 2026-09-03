@@ -19,6 +19,11 @@ underlying changes usually landed over the preceding days.
 - Repo: new README, `CONTRIBUTING.md`, `SECURITY.md`, this changelog, topics.
 - Sweep: 156 files scanned, 3 hits, all fake keys in deskclaw's redaction
   tests.
+- Later the same day: `scripts/mirror-sync.cjs` and `scripts/mirror-sweep.cjs`
+  now perform the sync. The sync deletes the machine-describing
+  `settings.json` block and fails if any sentinel phrase survives; the sweep
+  fails on any hit outside the redaction test fixtures. The retired
+  manifest-gate doc and section are gone.
 
 ## 2026-08-17
 
