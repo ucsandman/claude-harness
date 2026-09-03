@@ -52,6 +52,10 @@ Three examples of what "incident-born" means:
 - **`git-hooks/pre-commit`** runs `hooks/secret-guard.cjs` over every staged
   file in every repo on the machine, whatever the language, because keys were
   once found sitting in plaintext on disk.
+- **The four-round fix session of 2026-09-03** is written up in
+  [docs/postmortem-2026-09-03-declick-launch.md](docs/postmortem-2026-09-03-declick-launch.md):
+  what a file-scoped fix workflow, a capped advisor, an over-tight edit budget
+  and a missing git guard cost on one launch day, and what each became.
 - **`hooks/git-tree-guard.cjs`** exists because a reviewer in a 17-agent fix
   workflow ran `git stash` to watch a test fail without its fix, the pop
   conflicted on a sibling's edit, and a 25-file fix pass sat silently reverted

@@ -42,6 +42,7 @@
     "hooks/adapters/agy-adapter.cjs",
     "hooks/archive/manifest-gate.cjs",
     "hooks/tests",
+    "logs/git-tree-guard.log",
     "meditations/MEDITATIONS.md",
     "plugins/cache",
     "scope-locks",

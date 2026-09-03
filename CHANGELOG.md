@@ -3,6 +3,20 @@
 Syncs from the private harness to this mirror. Dates are sync dates; the
 underlying changes usually landed over the preceding days.
 
+## 2026-09-03 (fourth sync)
+
+- `fable-delegate-guard`: direct-edit budget 8 to 20 per prompt (80 to 160
+  lines); a redirect to a shell variable counts as scratch when the command
+  names the scratchpad; and a hands-on switch: "hands-on", "do it yourself" or
+  "line by line" in a prompt suspends the guard for the session, "delegate
+  again" restores it.
+- `workflows/fix-findings.js`: ownership by finding (`files: [...]`), not by
+  file; every fixer greps for a second implementation of the same behaviour
+  first; groups a reviewer flags get one more round with widened ownership;
+  the verify step runs under a timeout and reports a hang as a failure.
+- Docs: `postmortem-2026-09-03-declick-launch.md`, the session that produced
+  all of the above.
+
 ## 2026-09-03 (third sync)
 
 - Guard: `capability-graph-guard` no longer caps advisor consultations (was 2

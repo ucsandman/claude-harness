@@ -43,11 +43,17 @@ const TAIL_BYTES = 256 * 1024;
 
 const DENY_REASON = '[fable-delegate-guard] Delegate-first: this main loop runs on Fable. Hand this work to a subagent: Agent tool with an explicit model (sonnet for implementation, opus for large or risky tasks, haiku for mechanical edits and lookups) or a Workflow; Fable keeps decisions, review, and synthesis. Allowed here: reads, tests and lint, writes under ~/.claude and the session scratchpad. Shell override for a genuinely trivial command: append `# FABLE_OK: <why>` (logged). Disable for one session: set FABLE_DELEGATE_GUARD=off.';
 
-const EDIT_BUDGET = 8;
-const SMALL_EDIT_LINES = 80;
-const SMALL_WRITE_LINES = 120;
+// 2026-09-03 (declick launch): 8 edits per prompt made the main loop route a twelve-edit hand fix through
+// scratchpad patch scripts while three delegated passes had already cost 3.7M tokens and two hours. The
+// budget exists to stop a Fable loop from typing a feature; it must not stop it from finishing a bugfix.
+const EDIT_BUDGET = 20;
+const SMALL_EDIT_LINES = 160;
+const SMALL_WRITE_LINES = 200;
+// Wes says it once, in the prompt, and the guard steps aside for the rest of the session. "delegate again" restores it.
+const HANDS_ON = /\b(hands[- ]on|do (it|this|everything) yourself|fix (it|this|everything) yourself|line by line)\b/i;
+const HANDS_OFF = /\b(delegate again|delegate-first again|hands off)\b/i;
 
-const INJECTION = '[fable-delegate-guard] This session runs on Fable. Token economics (measured 2026-09-02): a subagent costs ~60k input tokens before its first tool call (harness prompt + skill/tool catalogs), then 2-4k per call. Anything under ~10 tool calls or ~80 lines of edits is CHEAPER done here than delegated; a one-line edit handed to Sonnet cost 77k. Delegate only large work (many files, a test suite, long tool output, or independent pieces that run in parallel) and name the model explicitly: opus large/risky, sonnet mid-size, haiku lookups. Enforced budget: 8 direct edits (<=80 lines) or writes (<=120 lines) per prompt; shell writes to ~/.claude and the scratchpad are free; larger code-writing through the shell is denied. Fable keeps decisions, final review, and synthesis.';
+const INJECTION = '[fable-delegate-guard] This session runs on Fable. Token economics (measured 2026-09-02): a subagent costs ~60k input tokens before its first tool call (harness prompt + skill/tool catalogs), then 2-4k per call. Anything under ~10 tool calls or ~80 lines of edits is CHEAPER done here than delegated; a one-line edit handed to Sonnet cost 77k. Delegate only large work (many files, a test suite, long tool output, or independent pieces that run in parallel) and name the model explicitly: opus large/risky, sonnet mid-size, haiku lookups. Enforced budget: 20 direct edits (<=160 lines) or writes (<=200 lines) per prompt; shell writes to ~/.claude and the scratchpad are free; larger code-writing through the shell is denied. When the operator says "hands-on" (or "do it yourself", "line by line") in a prompt, the guard steps aside for the rest of the session. Fable keeps decisions, final review, and synthesis.';
 
 function injectionText() {
   return INJECTION;
@@ -163,8 +169,12 @@ function isMutatingShell(command, opts = {}) {
   const scan = cmd.replace(NOISE_REDIR, ' ');
   let m;
   REDIRECT.lastIndex = 0;
+  // A redirect to a shell variable cannot be resolved here; when the command itself names the scratchpad
+  // (L="<scratchpad>/x.log"; npm test > "$L"), the variable is that path, and the run is a read plus a log.
+  const namesScratch = roots.filter(Boolean).some((r) => norm(cmd).includes(norm(r)));
   while ((m = REDIRECT.exec(scan)) !== null) {
     const target = m[2].replace(/^['"]|['"]$/g, '');
+    if (target.startsWith('$') && namesScratch) continue;
     if (!underAny(target, roots)) return true;
   }
 
@@ -263,10 +273,27 @@ function bumpEdits(payload, opts, used) {
   } catch (_) {}
 }
 
+function handsOnFile(payload, opts) {
+  return path.join(stateDirOf(opts), `${payload.session_id || 'no-session'}.handson`);
+}
+function handsOn(payload, opts) {
+  try { return fs.existsSync(handsOnFile(payload, opts)); } catch (_) { return false; }
+}
+function setHandsOn(payload, opts, on) {
+  try {
+    const f = handsOnFile(payload, opts);
+    if (on) { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, new Date().toISOString(), 'utf8'); }
+    else if (fs.existsSync(f)) fs.unlinkSync(f);
+  } catch (_) {}
+}
+
 function decide(payload = {}, opts = {}) {
   const env = opts.env || process.env;
   if (String(env.FABLE_DELEGATE_GUARD || '').toLowerCase() === 'off') {
     return { action: 'allow', kind: 'disabled', reason: '', model: null };
+  }
+  if (payload.session_id && handsOn(payload, opts)) {
+    return { action: 'allow', kind: 'hands-on', reason: 'hands-on mode for this session', model: null };
   }
   if (payload.agent_id) {
     return { action: 'allow', kind: 'subagent', reason: '', model: null };
@@ -277,10 +304,9 @@ function decide(payload = {}, opts = {}) {
 
   const tool = payload.tool_name || '';
   const input = payload.tool_input || {};
-  const now = () => new Date(opts.now || Date.now()).toISOString();
   const deny = (kind, detail, extra = '') => {
     logEvent({
-      ts: now(),
+      ts: new Date().toISOString(),
       session_id: payload.session_id || null,
       tool_name: tool,
       kind,
@@ -317,7 +343,7 @@ function decide(payload = {}, opts = {}) {
     const marker = command.match(MARKER);
     if (marker) {
       logEvent({
-        ts: now(),
+        ts: new Date().toISOString(),
         session_id: payload.session_id || null,
         tool_name: tool,
         kind: 'override',
@@ -370,6 +396,19 @@ function main(payload = {}, opts = {}) {
   const env = opts.env || process.env;
   if (String(env.FABLE_DELEGATE_GUARD || '').toLowerCase() === 'off') return '';
   if (!isFable(sessionModel(payload, opts))) return '';
+
+  // The operator's own words are the override. One "hands-on" in a prompt suspends the guard for the session.
+  const prompt = String(payload.prompt || '');
+  if (event === 'UserPromptSubmit' && HANDS_OFF.test(prompt) && handsOn(payload, opts)) {
+    setHandsOn(payload, opts, false);
+    logEvent({ ts: new Date().toISOString(), session_id: payload.session_id, kind: 'hands-off', detail: prompt.slice(0, 120) }, opts);
+    return JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: '[fable-delegate-guard] Delegate-first is back on for this session.' } });
+  }
+  if (event === 'UserPromptSubmit' && HANDS_ON.test(prompt)) {
+    setHandsOn(payload, opts, true);
+    logEvent({ ts: new Date().toISOString(), session_id: payload.session_id, kind: 'hands-on', detail: prompt.slice(0, 120) }, opts);
+    return JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: '[fable-delegate-guard] Hands-on mode: the operator asked for direct work, so the delegate-first budget and the shell code-writing rule are suspended for the rest of this session. Edit directly. Say "delegate again" to restore the guard.' } });
+  }
 
   const text = injectOnce(payload, opts);
   if (!text) return '';
