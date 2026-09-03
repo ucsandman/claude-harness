@@ -2,7 +2,7 @@
   "spinnerVerbs": {
     "mode": "replace",
     "verbs": [
-      "Backpay.me — Get paid for your AI coding usage. npx backpay"
+      "SPIKE — Escape the permanent underclass ; use SPIKE"
     ]
   },
   "statusLine": {
@@ -44,7 +44,17 @@
       "Bash(rm -rf /:*)",
       "Bash(rm -fr /:*)",
       "Bash(rm -rf ~:*)",
-      "Bash(rm -fr ~:*)"
+      "Bash(rm -fr ~:*)",
+      "Read(**/.env)",
+      "Read(**/.env.local)",
+      "Read(**/.env.*.local)",
+      "Read(**/.env.production)",
+      "Read(**/.env.development)",
+      "Read(**/*.pem)",
+      "Read(**/id_rsa*)",
+      "Read(**/id_ed25519*)",
+      "Read(**/.git-credentials)",
+      "Read(**/.netrc)"
     ],
     "ask": [
       "Bash(git push --force:*)",
@@ -84,6 +94,12 @@
             "command": "repowise-rewrite",
             "timeout": 5,
             "statusMessage": "Distilling command output..."
+          },
+          {
+            "type": "command",
+            "command": "node \"C:/Users/sandm/.claude/hooks/rm-guard.cjs\"",
+            "timeout": 10,
+            "statusMessage": "Checking delete target..."
           }
         ]
       },

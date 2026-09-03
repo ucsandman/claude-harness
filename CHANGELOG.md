@@ -3,6 +3,21 @@
 Syncs from the private harness to this mirror. Dates are sync dates; the
 underlying changes usually landed over the preceding days.
 
+## 2026-09-03 (sixth sync)
+
+- `hooks/rm-guard.cjs`: a PreToolUse gate on Bash and PowerShell that denies a
+  recursive delete whose target is not the session scratchpad or a build/cache
+  directory. It splits on shell separators, so `cd build; rm -rf .` is caught
+  where a start-of-command permission rule is not. Override `# RM_OK: <why>`.
+  Probe in `hooks/tests/rm-guard-probe.cjs` (17 cases).
+- `settings.json`: Read deny on `.env`, `.env.local`, `.env.*.local`,
+  `.env.production`, `.env.development`, `*.pem`, `id_rsa*`, `id_ed25519*`,
+  `.git-credentials`, `.netrc`.
+- Working agreement: the trifecta stop (private data, untrusted content and an
+  outbound channel never share one task), "thoughts?" means discuss not do, and
+  a fix loop never edits test files (also in the sonnet-implementer brief).
+  Pattern source: jde-projects.com/ai-setup/running-claude-code.
+
 ## 2026-09-03 (fifth sync)
 
 - declick first: the working agreement, the ALWAYS block and the three lean
