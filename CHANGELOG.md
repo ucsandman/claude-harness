@@ -130,3 +130,7 @@ underlying changes usually landed over the preceding days.
 
 - First publish. Fresh history, not a fork of the private repo. Swept file by
   file and through full history patterns before going public.
+
+## 2026-09-03
+
+- preflight: the shared Stripe account fires every product's webhook on one sale; the stripe line now checks each endpoint's price guard.

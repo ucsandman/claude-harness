@@ -45,8 +45,11 @@ function cleanEnv() {
 }
 function telegram(target, text, dir) {
   if (!target) return
-  const safe = text.replace(/[&|<>^%"`]/g, ' ').slice(0, 3500)
-  const r = spawnSync('cmd.exe', ['/c', 'openclaw', 'message', 'send', '--channel', 'telegram',
+  // Call the openclaw entry through node directly: cmd.exe drops everything after
+  // the first newline, so multi-line reports arrived as a bare header (seen 2026-09-03).
+  const safe = text.slice(0, 3500)
+  const entry = join(homedir(), 'AppData', 'Roaming', 'npm', 'node_modules', 'openclaw', 'openclaw.mjs')
+  const r = spawnSync(process.execPath, [entry, 'message', 'send', '--channel', 'telegram',
     '--target', String(target), '--message', safe], { encoding: 'utf8', timeout: 60000, env: cleanEnv() })
   log(dir, `telegram exit=${r.status} ${String(r.stderr || '').slice(0, 200)}`)
 }

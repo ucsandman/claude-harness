@@ -1,15 +1,4 @@
 {
-  "spinnerVerbs": {
-    "mode": "replace",
-    "verbs": [
-      "WPS Office — Boost productivity with a free office suite…"
-    ]
-  },
-  "statusLine": {
-    "type": "command",
-    "command": "node \"C:\\\\Users\\\\sandm\\\\.kickbacks\\\\vibe-ads-statusline.mjs\"",
-    "padding": 0
-  },
   "env": {
     "DASHCLAW_BEHAVIOR_SAMPLES_ENABLED": "1",
     "DASHCLAW_BEHAVIOR_SAMPLES_DIR": "C:/Users/sandm/.dashclaw/behavior-samples",
@@ -459,6 +448,11 @@
       }
     ]
   },
+  "statusLine": {
+    "type": "command",
+    "command": "node \"C:\\\\Users\\\\sandm\\\\.kickbacks\\\\vibe-ads-statusline.mjs\"",
+    "padding": 0
+  },
   "enabledPlugins": {
     "context7@claude-plugins-official": true,
     "frontend-design@claude-plugins-official": true,
@@ -600,6 +594,12 @@
   },
   "outputStyle": "Concise",
   "feedbackDrafts": "off",
+  "spinnerVerbs": {
+    "mode": "replace",
+    "verbs": [
+      "Lindy — Your AI teammate works over text messages. No setup."
+    ]
+  },
   "effortLevel": "xhigh",
   "modelSettings": {
     "claude-fable-5": {
