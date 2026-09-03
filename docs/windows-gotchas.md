@@ -58,3 +58,13 @@ tool failure, before improvising. Add new entries when a new one is solved.
 10. **Bind ephemeral test servers to `127.0.0.1` explicitly.** The default IPv6
     wildcard bind (`::`) made `localhost` navigation take 39+ seconds and hung a
     browser test for hours. (shard_001)
+
+## Paths and shells across tools
+
+11. **Native exes cannot see MSYS paths.** `/c/Users/...` into `node -e` makes
+    `screenshot({path})` write nowhere and exit 0. Pass `C:/Users/...`. (As gotcha 3.)
+12. **`ln -s` in Git Bash makes a plain directory, not a link.** Use
+    `fs.symlinkSync(t, p, 'junction')`; junctions need no admin.
+13. **`bash` is WSL's under Task Scheduler** and has no `/c/Users`. Pin
+    `C:\Program Files\Git\bin\bash.exe`.
+14. **agy keeps quotes in hook commands.** See `harness-parity.md`.

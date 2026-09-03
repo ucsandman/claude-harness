@@ -48,10 +48,11 @@ task where surgical changes actually matter. Full contract:
 ## agent-model-guard.cjs
 
 Blocks any Agent, Task, or Workflow spawn with no explicit `model:`. Caps Fable
-spawns at 3 per session (`AGENT_GUARD_FABLE_CAP` to override). Denies a Fable
-`agent()` call anywhere in a Workflow script that fans out anywhere — hoisting
-the call into a helper declared outside the loop used to defeat the older
-span-based check, and the per-call-site cap missed it too.
+spawns at 3 per session (`AGENT_GUARD_FABLE_CAP` to override). In a Workflow
+script a Fable `agent()` passes only as a module-top-level `await agent(...)`
+outside every fan-out span (max 3 sites): the synthesizer/judge role since
+2026-09-01. Denied inside parallel/pipeline/map/loop, inside any block or
+hoisted helper, or without `await`. Probe: `hooks/tests/fable-synth-probe.cjs`.
 
 Asymmetric on purpose: a false positive costs a marker append; a false negative
 cost a five-hour usage window on 2026-06-12, when one unrouted workflow spawned
@@ -83,7 +84,7 @@ stay inside the scope by hand there.
 
 Counts consecutive identical tool calls and injects an escalating reminder at 3,
 5, and 8. Advisory — it never blocks. `REPEAT_GUARD_OFF=1` disables it.
-Rationale: a private note.
+Rationale: [decisions/feature/2026-08-17-repeat-tool-call-guard.md](decisions/feature/2026-08-17-repeat-tool-call-guard.md).
 
 ## A guard registered is not a guard running
 

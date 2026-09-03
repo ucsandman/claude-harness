@@ -4,6 +4,18 @@ function Get-DeskRoot {
   return (Split-Path $PSScriptRoot -Parent)
 }
 
+# Read a property that may not exist on the object at all. Set-StrictMode Latest turns
+# a missing property into a terminating error, and the formatters are handed both rich
+# live objects and the minimal ones the tests build, so every optional field goes
+# through here. Lives in guard.ps1 because it is the first lib every entry point loads.
+function Get-DeskField {
+  param($Object, [string]$Name)
+  if ($null -eq $Object) { return $null }
+  $p = $Object.PSObject.Properties[$Name]
+  if ($null -eq $p) { return $null }
+  return $p.Value
+}
+
 function Test-DeskStop {
   param([string]$Root)
   return (Test-Path -LiteralPath (Join-Path $Root 'state\STOP'))

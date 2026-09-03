@@ -69,7 +69,8 @@ function deny(reason) {
     process.exit(0);
   }
 
-  if (tool !== 'Bash' && tool !== 'PowerShell') process.exit(0);
+  // Shell-tool aliases: Claude=Bash/PowerShell, Codex=shell_command/Bash, agy=run_command.
+  if (!['Bash', 'PowerShell', 'shell', 'shell_command', 'run_command'].includes(tool)) process.exit(0);
   const cmd = String(ti.command || '');
   if (!DEV_SERVER_RE.test(cmd)) process.exit(0);
 

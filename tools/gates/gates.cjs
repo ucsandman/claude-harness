@@ -6,6 +6,7 @@
 //   node gates.cjs md-links slop   run named checks
 //   node gates.cjs --list          list check ids
 //   node gates.cjs --strict        advisory checks fail too
+//   node gates.cjs --staged        pre-commit scope: only hits this commit touches block
 //   node gates.cjs --report        also write and open an HTML report
 //
 // Exit 0 all green, 1 a check failed, 2 the runner itself broke.
@@ -15,7 +16,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const HOME = process.env.USERPROFILE || process.env.HOME || '';
@@ -28,6 +29,27 @@ const DECISION_CLASSES = ['architecture', 'process', 'feature', 'bug-fix', 'simp
 const rel = (p) => path.relative(ROOT, p).split(path.sep).join('/');
 const read = (p) => fs.readFileSync(p, 'utf8');
 const exists = (p) => fs.existsSync(p);
+
+/**
+ * Under --staged, a hit fails the run only when this commit touches it: the
+ * offending doc is staged, or the path it points at is staged (added, deleted
+ * or renamed). Every other hit prints as `warn` so unrelated uncommitted work
+ * in the tree cannot block a commit (2026-09-03: another session's archived
+ * hook blocked every commit for a day). Without --staged everything fails.
+ */
+const blocks = (ctx, ...keys) => !ctx || !ctx.staged || keys.some((k) => k && ctx.staged.has(k));
+
+/** Repo-relative paths in the index: old and new names of renames, deletions too. */
+function stagedPaths() {
+  const out = execSync('git diff --cached --name-status -M', { cwd: ROOT, encoding: 'utf8' });
+  const set = new Set();
+  for (const line of out.split('\n')) {
+    const cols = line.trim().split('\t');
+    if (cols.length < 2) continue;
+    for (const p of cols.slice(1)) set.add(p.replace(/\\/g, '/'));
+  }
+  return set;
+}
 
 /** `wc -w` equivalent: whitespace-delimited tokens. */
 function countWords(text) {
@@ -135,7 +157,7 @@ function extractRefs(text) {
 // ─────────────────────────────────────────────────────────── checks
 
 /** Word ceilings from budgets.json. A missing budgeted file is a failure. */
-function checkDocBudgets() {
+function checkDocBudgets(ctx) {
   const lines = [];
   let ok = true;
   if (!exists(BUDGETS)) return { ok: false, lines: [`budgets.json missing at ${rel(BUDGETS)}`] };
@@ -156,8 +178,8 @@ function checkDocBudgets() {
     const words = countWords(read(abs));
     const pct = Math.round((words / ceiling) * 100);
     if (words > ceiling) {
-      lines.push(`OVER ${relPath}: ${words} words exceeds the ${ceiling}-word ceiling — relocate to a linked doc first, condense second, raise the ceiling last`);
-      ok = false;
+      const hit = `OVER ${relPath}: ${words} words exceeds the ${ceiling}-word ceiling — relocate to a linked doc first, condense second, raise the ceiling last`;
+      if (blocks(ctx, relPath)) { lines.push(hit); ok = false; } else lines.push(`warn ${hit} (not staged)`);
     } else {
       lines.push(`ok   ${relPath}: ${words}/${ceiling} (${pct}%)`);
     }
@@ -176,8 +198,8 @@ function checkMdLinks(ctx) {
       if (abs === null) continue;
       checked++;
       if (!exists(abs)) {
-        lines.push(`DEAD ${rel(doc)} → ${ref}`);
-        ok = false;
+        const hit = `DEAD ${rel(doc)} → ${ref}`;
+        if (blocks(ctx, rel(doc), rel(abs))) { lines.push(hit); ok = false; } else lines.push(`warn ${hit} (neither side staged)`);
       }
     }
   }
@@ -349,17 +371,25 @@ function currentRefs(docs) {
  * file is the index pattern working, not a loss. Losing it everywhere is a loss.
  * A deliberate removal is recorded with `--accept-refs`.
  */
-function checkRefRatchet() {
-  const now = new Set(currentRefs(livePointerDocs()));
+function checkRefRatchet(ctx) {
+  const pointerDocs = livePointerDocs();
+  const now = new Set(currentRefs(pointerDocs));
   if (!exists(REFS)) {
     return { ok: true, lines: ['ok   no snapshot yet — run `gates.cjs --accept-refs` to arm the ratchet'] };
   }
   const recorded = JSON.parse(read(REFS)).paths || [];
   const dropped = recorded.filter((p) => !now.has(p));
-  const lines = dropped.map((p) => `DROPPED ${p} — was referenced, now referenced nowhere. Restore the pointer, or run \`gates.cjs --accept-refs\` if the removal is deliberate.`);
+  // A drop blocks when the path itself or any pointer doc is in this commit.
+  const stagedDocs = pointerDocs.map(rel);
+  const lines = [];
+  let blocking = 0;
+  for (const p of dropped) {
+    const hit = `DROPPED ${p} — was referenced, now referenced nowhere. Restore the pointer, or run \`gates.cjs --accept-refs\` if the removal is deliberate.`;
+    if (blocks(ctx, p, ...stagedDocs)) { lines.push(hit); blocking++; } else lines.push(`warn ${hit} (not staged)`);
+  }
   for (const p of [...now].filter((p) => !recorded.includes(p))) lines.push(`new     ${p}`);
   if (!dropped.length) lines.push(`ok   ${recorded.length} recorded references still reachable`);
-  return { ok: dropped.length === 0, lines };
+  return { ok: blocking === 0, lines };
 }
 
 /** Every SKILL.md has usable frontmatter and a name that matches its directory. */
@@ -412,12 +442,22 @@ function checkHookWiring() {
   const commands = [...settingsCommands];
   // git-hooks/ and scripts/ invoke hook scripts too. Without them a
   // legitimately-wired guard reads as an orphan.
-  for (const dir of ['git-hooks', 'scripts']) {
+  for (const dir of ['git-hooks', 'scripts', 'tools']) {
     for (const f of walk(path.join(ROOT, dir))) {
       if (/\.(sh|ps1|cjs|js|py|bat|cmd)$|^[^.]+$/.test(path.basename(f))) {
         try { commands.push(read(f)); } catch { /* unreadable, skip */ }
       }
     }
+  }
+  // Since 2026-08-17 the same guard scripts are wired into Codex and Antigravity
+  // too (see docs/harness-parity.md). Their configs live outside this repo, so
+  // without them a guard that three harnesses depend on reads as an orphan.
+  for (const p of [
+    path.join(HOME, '.codex', 'hooks.json'),
+    path.join(HOME, '.codex', 'config.toml'),
+    path.join(HOME, '.gemini', 'config', 'hooks.json'),
+  ]) {
+    try { if (exists(p)) commands.push(read(p)); } catch { /* unreadable, skip */ }
   }
   // A settings.json command naming an absolute path that does not exist is a
   // guard that silently stopped guarding. That is the failure worth blocking on.
@@ -523,9 +563,12 @@ function main(argv) {
     return 2;
   }
 
-  // Always the full standing set, never just what is staged: a rename in one
-  // doc breaks a link in another, and a staged-only scan misses exactly that.
-  const ctx = { docs: standingDocs(), today: new Date().toISOString().slice(0, 10) };
+  // Always SCAN the full standing set, never just what is staged: a rename in
+  // one doc breaks a link in another, and a staged-only scan misses exactly
+  // that. --staged only changes what BLOCKS: see blocks() above.
+  const staged = flags.has('--staged') ? stagedPaths() : null;
+  const ctx = { docs: standingDocs(), today: new Date().toISOString().slice(0, 10), staged };
+  if (staged) console.log(`scope: --staged, ${staged.size} path(s) in the index decide what blocks; everything else warns`);
 
   const results = [];
   let failed = 0;

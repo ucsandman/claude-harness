@@ -88,8 +88,14 @@ function deny(reason) {
     process.exit(0); // unparseable input: never block on our own bug
   }
 
+  // Shell-tool aliases across harnesses: Claude Code says Bash/PowerShell, Codex
+  // says shell_command (transcripts) and Bash (hook layer), agy says run_command
+  // (the agy adapter already maps that to Bash, these are belt-and-braces).
+  // An unlisted name falls through to exit(0), i.e. a silent no-op over the whole
+  // command surface — the same way PowerShell was missed before 2026-08.
+  const SHELL_TOOLS = new Set(['Bash', 'PowerShell', 'shell', 'shell_command', 'run_command']);
   const tool = input.tool_name || '';
-  if (tool !== 'Bash' && tool !== 'PowerShell') process.exit(0);
+  if (!SHELL_TOOLS.has(tool)) process.exit(0);
 
   const cmd = String((input.tool_input || {}).command || '');
   if (!cmd) process.exit(0);

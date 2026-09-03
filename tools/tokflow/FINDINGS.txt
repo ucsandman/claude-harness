@@ -1,0 +1,112 @@
+TOKEN FLOW FROM TRANSCRIPTS — window 2026-08-26 .. 2026-09-02 (8 days)
+Scripts: tokflow.cjs (main), drill.cjs, pass3.cjs, pass4.cjs. Reports: *-report.txt.
+
+SCOPE PROCESSED
+  main session files    162  (321 MB)
+  subagent files        131  (161 MB)
+  JSONL lines parsed    100,456   bad_lines=0
+  sidechain entries found inside main files = 0  (so main+sub walk does not double count)
+  main sessions with turns 158 | main assistant turns 7,352 | subagent turns 3,798
+  assistant turns after messageId dedupe 11,150 | user prompt turns 846
+  distinct skills invoked 34 across 121 Skill calls | tool calls 13,856 | mcp calls 1,031 across 103 mcp tools
+
+HEADLINE TOTALS
+  raw input-side tokens        2,097,723,318   (cache_read 2,042,591,806 = 97.4%)
+  cache_creation                  54,418,763   (2.6% of raw, 25% of price-weighted)
+  fresh input_tokens                 712,749   (0.03%)
+  output                           6,828,322   (thinking 2,227,849 = 32.6%)
+  price-weighted effective input = 0.1*cr + 1.25*cc + 1*fresh = 273,304,919
+  mean context per turn 188,137 | p50 159,259
+  fixed context (first assistant turn, clean start, first_turn>0, non-resume, n=115):
+    mean 86,499  p50 81,801  p10 44,700  p90 163,517  min 15,850
+    (excluded: 8 sessions reporting first_turn=0, 23 resume/clear sessions mean 99,404)
+    reconciliation: memory's 40.4k baseline was a headless `claude -p` run; p10=44,700 is the
+    interactive equivalent (bare project dir). Typical interactive p50 81,801 adds MCP servers,
+    plugin SessionStart hooks, the 30 KB skill_listing, CLAUDE.md and MEMORY.md.
+    -> fixed context is ~45% of the mean per-turn context; the other 55% is accumulated conversation
+  mean turns per main session 45 (p50 18, p90 135)
+    -> 1 token added to fixed context costs 1 + 0.1*45 = ~5.5 effective tokens/session
+
+WHERE THE MONEY IS (effective input by context band)
+  band        turns   cache_read      cache_creation   effective     share
+  <50k          241    5,388,954        1,872,415       2,879,414      1.1%
+  50-100k     2,117  150,596,364       17,164,836      36,515,681     13.4%
+  100-200k    4,979  703,254,217       18,672,779      93,666,395     34.3%
+  200-300k    2,292  544,338,347        8,175,567      64,653,293     23.7%
+  300-400k      963  324,665,769        6,209,493      40,228,443     14.7%
+  400-600k      556  264,866,346        2,306,978      29,370,357     10.7%
+  >600k          93   57,746,284          173,365       5,991,335      2.2%
+  => 3,904 turns above 200k context = 51.3% of all effective input cost (140.2M of 273.3M)
+  => compaction events observed in the whole window: 0
+
+INJECTED CONTEXT (attachment kind | hookEvent | source), total 10,565,046 B (~2,641,262 tok)
+  skill_listing            | -            | catalog            n=321  sess=251  7,296,436 B  5,683 tok each
+  hook_additional_context  | SessionStart | capability-primer   n=149  sess=149    908,187 B  1,524 tok each   [plugin now false]
+  hook_success             | SessionStart | ponytail            n=149  sess=149    782,399 B  1,313 tok each   [plugin now false]
+  hook_additional_context  | SubagentStart| ponytail            n=132  sess=117    709,236 B  1,343 tok each   [plugin now false]
+  hook_success             | SessionStart | vercel-plugin       n=141  sess= 70    571,767 B  1,014 tok each   [global false, project re-enables live]
+  task_reminder            | -            | other               n=947  sess= 95    174,406 B     46 tok each
+  hook_success             | SessionStart | creds-vault         n= 77             32,713 B    106 tok each
+  hook_additional_context  | SessionStart | superpowers         n=  8             29,785 B    931 tok each
+  hook_additional_context  | SessionStart | session-budget      n= 41             13,546 B     83 tok each
+  hook_success             | SessionStart | fable-delegate-guard n= 11              8,114 B    184 tok each
+  PER-TOOL-CALL HOOKS COST ~0 TOKENS: PreToolUse n=9,427 -> 0 B; PostToolUse n=7,077 -> 6,179 B (mean 1 B);
+    Stop n=1,290 -> 3,422 B. There is nothing to shorten on the per-call path.
+
+LIVE SKILL CATALOG (sampled 2026-09-02T22:17:52Z, 29,979 B, 129 entries)
+  36 user-dir skills   7,475 B (~1,869 tok)
+  93 plugin/builtin   22,505 B (~5,626 tok)
+  largest entries: dataviz 1,447 | design 1,029 | impeccable 920 | supergoal 888 | code-review 806 |
+    update-config 707 | artifact-capabilities 638 | vercel x5 = 2,281 | claude-md-management 381 | skill-creator 350
+  injected main-loop n=210 mean 19,138 B (4,784 tok); subagent n=112 mean 29,273 B (7,318 tok)
+  Skill invocations (121 total, 34 distinct): dispatch-blocks 18, ship 13, wes-voice 11, superpowers:* 16,
+    impeccable 8, frontend-design 6, polish 6, de-vibe 5, artifact-design 4, ... vercel:deploy 1, update-config 1
+  ZERO invocations in 8 days / 251 sessions: code-review, supergoal, skill-creator, claude-md-management
+
+SUBAGENT SPAWNS BY TYPE (joined via .meta.json)
+  type / model                              spawns  first_ctx mean   p50      min      turns  total_tokens
+  general-purpose / opus                      37        51,351    51,582   45,672    1,868   279,182,330
+  general-purpose / sonnet                    59        53,117    52,961   45,622    1,360   151,494,662
+  sonnet-implementer / opus                    4        48,324    48,765   47,723      149    19,369,194   <-- model mismatch
+  sonnet-implementer / sonnet                  6        59,524    68,512   21,567      171    19,168,121   <-- mean > general-purpose
+  Explore / sonnet                             2        32,037    32,067   32,007       89     7,792,607
+  opus-owner / opus                            4        18,211    18,408   17,511       67     3,797,970
+  haiku-scout / haiku                          9        15,703    14,436   13,344       91     2,814,067
+  general-purpose / haiku                      5        37,456    38,862   35,273       14       593,124
+  advisor / fable                              1        18,754                                    18,755
+  FLOOR-TO-FLOOR delta (min, prompt-size independent): opus 45,672-17,511 = 28,161 ; sonnet 45,622-21,567 = 24,055
+  101 general-purpose spawns in 8 days.  Subagents = 482,249,779 raw tokens = 22.9% of all tokens.
+
+TOOL_RESULT TEXT BYTES (images excluded), 23,651,840 B total (~5,912,960 tok) across 13,866 results
+  Bash    n=7,165  11,298,902 B  ~2,824,726 tok  mean 1,577  p50 499   p95 6,669  max 29,899
+  Read    n=1,546   8,206,989 B  ~2,051,747 tok  mean 5,309  p50 1,214 p95 28,860 max 86,052
+  WebSearch n=386     973,939 B    ~243,485 tok  mean 2,523
+  WebFetch  n=506     565,326 B    ~141,332 tok  mean 1,117
+  Grep      n=325     324,543 B     ~81,136 tok  mean   999
+  Edit    n=1,408     227,592 B     ~56,898 tok  mean   162
+  Bash size buckets: <=1KB 4,747 | 1-5KB 1,898 | 5-20KB 477 | >20KB 40
+
+IMAGES  658 image blocks, 146,129,028 base64 chars (Read 500, chrome 143, sidetap 6).
+  Model cost is ~1,100-1,600 tok per image (API resizes >1568px), NOT bytes/4 -> ~987,000 tok total.
+  Downscaling saves upload bytes and wall time, NOT tokens. Not a token proposal.
+
+CACHE_CREATION AFTER TURN 1 (main sessions), total 30,187,239
+  gap <5m     turns 6,991  cc 22,513,680  (74.6%)  mean 3,220/turn   <- normal incremental append
+  gap 5m-1h   turns   186  cc  4,299,316  (14.2%)  mean 23,115/turn
+  gap 1h-6h   turns    17  cc  3,178,584  (10.5%)  mean 186,976/turn <- full re-cache after idle
+  gap >6h     turns     1  cc    195,659   (0.6%)  mean 195,659
+  => 203 turns following a >5m gap cost 7,477,900 cc tokens (24.8%); at 1.25x = 9,347,375 effective.
+  Top spikes carried ZERO injected blocks (bec1e943 turn#202 cc=539,147 cr=32,385) -> TTL expiry / context
+  growth, not cache-busting text.
+
+MEASURED AND REJECTED (surfaces checked that do not pay)
+  duplicate Read (same path+offset+limit in one session): 66 of 1,547 = 4.3%, 22,355 text tok + 45 image blocks (~67,500 tok)
+  duplicate Bash (identical command in one session): 85 of 7,185 = 1.2%, 12,229 tok
+  -> a dedupe hook buys ~102k tokens per 8 days. Not worth a guard.
+  Bash truncation: only 40 of 7,165 results exceed 20 KB. Capping at 20 KB saves <2% of the Bash surface.
+  Thinking: 32.6% of output; output at 5x = 34.1M of ~307M effective. Not a lever.
+  Per-tool-call hook text: 0 bytes. Nothing to shorten.
+
+ALREADY DONE (do not re-propose) — confirmed false in settings.json enabledPlugins today:
+  ponytail, claude-code-capability-primer, chrome-devtools-mcp, repowise, vercel (global), ui-ux-pro-max,
+  core-3d-animation. Their measured cost above is historical (they fired earlier in this same window).

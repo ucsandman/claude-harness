@@ -73,7 +73,7 @@ if [ -n "$HARNESS_ROOT" ] && [ "$HARNESS_ROOT" = "$HARNESS_EXPECT" ] && [ -f "$G
     if git diff --cached --name-only --diff-filter=ACM | grep -qE '\.md$|settings\.json$'; then
         echo ""
         echo "▸ harness doc gates..."
-        if ! node "$(to_native "$GATES")" doc-budgets md-links ref-ratchet note-format rule-expiry; then
+        if ! node "$(to_native "$GATES")" --staged doc-budgets md-links ref-ratchet note-format rule-expiry; then
             echo ""
             echo "  ✗ doc gates failed — see ~/.claude/docs/doc-standard.md"
             echo "    (move a section to its own file and leave an index line;"

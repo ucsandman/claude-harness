@@ -23,13 +23,21 @@ WT="$(mktemp -d)/audit"
     --model claude-sonnet-5 \
     --allowed-tools "Read,Grep,Glob,Edit,Write" \
     --max-turns 40 > "$DIR/last-audit-output.txt" 2>&1
-  echo "claude rc=$?"
+  RC=$?
+  echo "claude rc=$RC"
 
   # Findings-only runs must not evaporate with the worktree: keep every report.
   mkdir -p "$DIR/reports"
   [ -f AUDIT-NOTES.md ] && cp AUDIT-NOTES.md "$DIR/reports/AUDIT-$(date +%Y%m%d).md"
 
-  if git status --porcelain | grep -qv "AUDIT-NOTES.md"; then
+  # A dead session leaves a clean tree, which used to be indistinguishable from
+  # "audited, nothing to change". Check rc BEFORE trusting git status.
+  if [ "$RC" -ne 0 ]; then
+    echo "!!! AUDIT FAILED: claude exited $RC — no PR opened."
+    echo "!!! This week is UNAUDITED, not clean. Last 20 lines of output:"
+    tail -20 "$DIR/last-audit-output.txt"
+    git push -q origin --delete "$BRANCH" 2>/dev/null
+  elif git status --porcelain | grep -qv "AUDIT-NOTES.md"; then
     git add -A
     git -c core.hooksPath=/dev/null commit -q -m "audit: weekly harness self-audit $(date +%Y-%m-%d)" \
       -m "Automated proposal — review AUDIT-NOTES.md in the diff. Merging applies it to the live harness on next pull."
@@ -51,3 +59,7 @@ WT="$(mktemp -d)/audit"
   git branch -q -D "$BRANCH" 2>/dev/null
   echo "=== done ==="
 } >> "$LOG" 2>&1
+
+# Surface the audit's real outcome to Task Scheduler's Last Result, so a dead
+# run shows red instead of a green tick over an unaudited week.
+exit "${RC:-1}"

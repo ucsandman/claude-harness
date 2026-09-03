@@ -1,6 +1,7 @@
 # Manifest Gate — declared-vs-actual verification at commit time
 
-Added 2026-08-11. Lives in `~/.claude/hooks/manifest-gate.cjs`, enforced by the
+Added 2026-08-11. Archived 2026-09-03 to `~/.claude/hooks/archive/manifest-gate.cjs`
+(commands below assume that path); was enforced by the
 global pre-commit hook at `~/.claude/git-hooks/pre-commit` (`core.hooksPath`).
 
 That hook moved out of `~/.git-hooks` on the same date. It was version

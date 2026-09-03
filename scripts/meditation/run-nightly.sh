@@ -68,6 +68,22 @@ LINE="C:/Users/sandm/.claude/meditations/digests/latest-line.txt"
   RC=$?
   echo "=== done rc=$RC ==="
 
+  # Fable has its own weekly cap, separate from the subscription's. On
+  # 2026-08-16 the Sunday run died on its first token ("You've reached your
+  # Fable 5 limit") and the week got NO synthesis at all — the one night that
+  # matters most. A weekly synthesis on opus beats no weekly synthesis, so fall
+  # back once. Guarded on the missing digest so a fable run that did its work
+  # and then failed late is never re-run and never double-writes.
+  if [ "$RC" -ne 0 ] && [ "$MODEL" = "fable" ] && [ ! -f "$DIGEST" ]; then
+    echo "=== fable unavailable (rc=$RC) — retrying $MODE on opus ==="
+    MODEL=opus
+    CMD=(/c/Users/sandm/.local/bin/claude -p "/meditate $MODE" --model opus --effort xhigh
+      --permission-mode bypassPermissions --strict-mcp-config)
+    cd "C:/Users/sandm/.claude" && "${CMD[@]}"
+    RC=$?
+    echo "=== retry done rc=$RC ==="
+  fi
+
   # Artifact self-check. The headless session exits 0 even when it writes
   # nothing at all — proven by the first live run, which was blocked by the
   # sensitive-file gate and still returned rc=0. So rc cannot be trusted alone.

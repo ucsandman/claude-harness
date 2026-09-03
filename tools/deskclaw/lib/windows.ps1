@@ -6,14 +6,62 @@ using System;
 using System.Runtime.InteropServices;
 using System.Text;
 public class DeskWin {
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
   [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc cb, IntPtr l);
   public delegate bool EnumWindowsProc(IntPtr h, IntPtr l);
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
   [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h, StringBuilder s, int c);
   [DllImport("user32.dll")] public static extern int GetClassName(IntPtr h, StringBuilder s, int c);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);
+  [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr h, uint cmd);
+  [DllImport("user32.dll", CharSet = CharSet.Auto)] public static extern int GetWindowLong(IntPtr h, int i);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
 }
 "@
+}
+
+function Get-DeskWindowClass {
+  param([IntPtr]$Handle)
+  $sb = New-Object Text.StringBuilder 256
+  if ([DeskWin]::GetClassName($Handle, $sb, 256) -le 0) { return '' }
+  return $sb.ToString()
+}
+
+# x,y,w,h for the display list. Distinct from shot.ps1's Get-DeskWindowRect (L,T,R,B),
+# which the occlusion check needs; keeping both means windows.ps1 stays loadable on its
+# own, which is how tests/run.ps1 sources it.
+function Get-DeskWindowBox {
+  param([IntPtr]$Handle)
+  $r = New-Object DeskWin+RECT
+  if (-not [DeskWin]::GetWindowRect($Handle, [ref]$r)) { return $null }
+  return [pscustomobject]@{ X = $r.L; Y = $r.T; W = ($r.R - $r.L); H = ($r.B - $r.T) }
+}
+
+# Owned popups: menus, combo dropdowns and flyouts are separate top-level windows, so
+# the child walk of a window never sees them. Same process, plus either owned by the
+# target or carrying WS_POPUP. GW_OWNER = 4, GWL_STYLE = -16, WS_POPUP = 0x80000000
+# (bit 31, so a negative style int is exactly "has WS_POPUP").
+function Get-DeskOwnedPopup {
+  param([IntPtr]$Handle)
+  $ownerPid = 0
+  [void][DeskWin]::GetWindowThreadProcessId($Handle, [ref]$ownerPid)
+  if ($ownerPid -eq 0) { return @() }
+  $out = New-Object Collections.Generic.List[object]
+  foreach ($rw in Get-DeskRawWindow) {
+    if ($rw.Handle -eq $Handle) { continue }
+    if ($rw.Pid -ne $ownerPid) { continue }
+    $owner = [DeskWin]::GetWindow($rw.Handle, 4)
+    $style = [DeskWin]::GetWindowLong($rw.Handle, -16)
+    if ($owner -ne $Handle -and ($style -band 0x80000000) -eq 0) { continue }
+    $box = Get-DeskWindowBox $rw.Handle
+    if ($null -eq $box -or $box.W -le 0 -or $box.H -le 0) { continue }
+    $out.Add([pscustomobject]@{
+      Handle = $rw.Handle; Title = (Protect-Secret $rw.Title)
+      Class = (Get-DeskWindowClass $rw.Handle); X = $box.X; Y = $box.Y
+    })
+  }
+  return $out.ToArray()
 }
 
 function Merge-UwpWindow {
@@ -57,11 +105,13 @@ function Get-DeskWindow {
   $raw = @(Get-DeskRawWindow | Where-Object { $_.Title.Length -gt 0 })
   $found = Merge-UwpWindow $raw
 
+  $fg = [DeskWin]::GetForegroundWindow()
   $out = New-Object Collections.Generic.List[object]
   $i = 0
   foreach ($w in $found) {
     $i++
     $denied = Test-Denylisted $w.Title $w.ProcessName $Patterns
+    $box = Get-DeskWindowBox $w.Handle
     $out.Add([pscustomobject]@{
       Ref         = "@w$i"
       Title       = if ($denied) { '' } else { Protect-Secret $w.Title }
@@ -69,15 +119,32 @@ function Get-DeskWindow {
       Pid         = $w.Pid
       Handle      = $w.Handle
       Denied      = $denied
+      Class       = Get-DeskWindowClass $w.Handle
+      X           = if ($box) { $box.X } else { $null }
+      Y           = if ($box) { $box.Y } else { $null }
+      W           = if ($box) { $box.W } else { $null }
+      H           = if ($box) { $box.H } else { $null }
+      Focused     = ($w.Handle -eq $fg)
     })
   }
   return $out.ToArray()
 }
 
+# The 0.2 line is the prefix, unchanged; class, rect and focus are appended. A denied
+# window still gets no detail at all — its geometry is as much of a leak as its title.
 function Format-DeskWindow {
   param($Window)
   if ($Window.Denied) { return "$($Window.Ref) [SKIPPED: denylisted]" }
-  return "$($Window.Ref) `"$($Window.Title)`" ($($Window.ProcessName), $($Window.Pid))"
+  $line = "$($Window.Ref) `"$($Window.Title)`" ($($Window.ProcessName), $($Window.Pid))"
+  $class = Get-DeskField $Window 'Class'
+  if ($class) { $line += " $class" }
+  $x = Get-DeskField $Window 'X'
+  $w = Get-DeskField $Window 'W'
+  if ($null -ne $x -and $null -ne $w) {
+    $line += " [$x,$(Get-DeskField $Window 'Y'),$w,$(Get-DeskField $Window 'H')]"
+  }
+  if (Get-DeskField $Window 'Focused') { $line += ' focused=true' }
+  return $line
 }
 
 function Resolve-DeskTarget {

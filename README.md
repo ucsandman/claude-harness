@@ -18,6 +18,25 @@ Three examples of what that means:
   in every repo on the machine, whatever the language, because keys were once
   found sitting in plaintext on disk.
 
+## New since the first publish (September 2026)
+
+- **Capability graph.** Models may only delegate downward (Fable to Opus to
+  Sonnet to Haiku). `hooks/capability-graph-guard.cjs` denies a spawn that
+  crosses a missing edge. Upward consultation goes through `agents/advisor.md`,
+  which the guard always places one rung above the caller.
+- **Delegate-first on the expensive tier.** `hooks/fable-delegate-guard.cjs`
+  budgets direct edits when the main loop runs on the top model and pushes the
+  rest to cheaper subagents. The numbers behind it are in
+  `tools/tokflow/AUDIT-2026-09-02.md`: a subagent costs about 60k tokens before
+  its first tool call, so anything under ten calls is cheaper done inline.
+- **Batch guard.** `hooks/batch-guard.cjs` denies the fourth consecutive
+  single-statement shell call. One tool call per turn was the single biggest
+  measured cost.
+- **One guard suite, three harnesses.** `hooks/adapters/` and
+  `tools/harness-sync/` feed the same rules and guards into Claude Code, Codex
+  (`AGENTS.md`) and Antigravity (`GEMINI.md`). `docs/harness-parity.md` explains
+  the wiring.
+
 ## Layout
 
 | Path | What it is |
@@ -26,11 +45,11 @@ Three examples of what that means:
 | `SOUL.md` | Who the agent is. Read before CLAUDE.md. **Template here**, see below. |
 | `RTK.md` | Notes for rtk, a Rust CLI proxy that compresses Bash output 60 to 90 percent via a hook. |
 | `settings.json` | Hook wiring, permissions, env. Secrets live in a separate untracked file it points at. |
-| `hooks/` | PreToolUse and lifecycle guards: secret-guard, process-kill-guard, agent-model-guard, manifest-gate, scope-lock, and friends. |
-| `git-hooks/` | The global pre-commit chain (`core.hooksPath`). Secret scan, manifest gate, Python lint gate. |
-| `tools/` | Small zero-dependency tools the agent uses: spend ledger, memory search, repo status board, scheduled-job health, secrets-wiring checkup, desktop eye, TTS, process ledger, check-breaker, session fleet monitor, error log harvester, doc gates. Each has its own README. |
-| `scripts/` | The scheduled jobs: error log harvest, nightly meditation, morning fleet briefing, deploy sentinel, weekly harness audit, health check. `install-scheduled-tasks.ps1` registers the ones that ship here (plan only, `-Execute` to apply). |
-| `agents/` | Subagent definitions with explicit model routing (cheap scout, mid implementer, security reviewer). |
+| `hooks/` | PreToolUse and lifecycle guards: secret-guard, process-kill-guard, agent-model-guard, capability-graph-guard, fable-delegate-guard, batch-guard, slow-command-guard, scope-lock, and friends. `hooks/tests/` holds the probes that make each guard fail on purpose. `hooks/adapters/` is the same guard suite wired into Codex and Antigravity. |
+| `git-hooks/` | The global pre-commit chain (`core.hooksPath`). Secret scan, staged doc gates, Python lint gate. |
+| `tools/` | Small zero-dependency tools the agent uses: spend ledger, memory search, repo status board, scheduled-job health, secrets-wiring checkup, desktop eye, TTS, process ledger, check-breaker, session fleet monitor, error log harvester, doc gates, skill finder, token-flow miner, harness sync. Each has its own README. |
+| `scripts/` | The scheduled jobs: error log harvest, nightly meditation, morning fleet briefing, deploy sentinel, weekly harness audit, health check. |
+| `agents/` | Subagent definitions with explicit model routing: cheap scout, mid implementer, Opus owner, security reviewer, and an `advisor` that is always one rung above its caller. |
 | `docs/` | The reference docs CLAUDE.md points at, plus `reddit-claude-setup-share.md`, a guided tour written to be pasted into Claude Code and adapted to your project. |
 | `meditations/` | The nightly reflection loop and the promotion ladder. **Templates here**, see below. |
 
@@ -59,9 +78,12 @@ private. The mechanism, the gates, and the write rails are all here unchanged.
 - `.secrets.env` and anything else untracked. The repo never contained
   credentials, and this mirror was swept file by file and through full history
   patterns before publishing.
-- Four docs `CLAUDE.md` points at stay private because they map my machines and
-  business context: `machine-facts.md`, `doc-standard.md`, `decision-notes.md`,
-  `plugin-hygiene.md`. Those pointers will not resolve in a clone.
+- `CLAUDE.md` is the generated global agreement only. The private copy also
+  carries a short profile block (memory wiring, project map, a remote devbox)
+  that maps my machines and business context, so it stays out.
+- The `autoMode` block of `settings.json`. It is a per-machine trust-boundary
+  description (private repo names, internal domains, where `.env` files live)
+  and has no business in a public file.
 - The scheduled jobs that drive product repos (licence fulfilment, order
   checks, outreach drainers) and the autonomous company that runs on top of
   this harness. Different repos, private.

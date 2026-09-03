@@ -10,9 +10,11 @@
 //   FABLE_CAP spawns per session (counted in a state file next to this hook).
 //   "fork" subagents inherit Fable, so they count against the same cap.
 // - Workflow: every agent() call needs an inline model:. Fable models are
-//   allowed on at most FABLE_CAP call sites, and never inside a fan-out
-//   construct (parallel/pipeline/.map/.flatMap/.forEach/Array.from/for/while)
-//   where one call site can multiply into many agents.
+//   allowed on at most FABLE_CAP call sites, each of which must be a standalone
+//   top-level `await agent(...)` outside every fan-out construct
+//   (parallel/pipeline/.map/.flatMap/.forEach/Array.from/for/while), where one
+//   call site can multiply into many agents. Fable synthesizers/judges placed
+//   after a fan-out are the intended use.
 // Override the cap with env AGENT_GUARD_FABLE_CAP.
 
 const fs = require("fs");
@@ -266,6 +268,23 @@ function fanoutRanges(script, masked) {
   return ranges;
 }
 
+// True when the agent() call at idx is a standalone top-level await: outside
+// every fan-out range, at brace depth 0 (masked text), immediately preceded by
+// `await`, with no `=>`/`function` earlier on the same line.
+function isStandaloneTopLevel(idx, masked, ranges) {
+  if (ranges.some(([s, e]) => idx >= s && idx < e)) return false;
+  let depth = 0;
+  for (let i = 0; i < idx; i++) {
+    if (masked[i] === "{") depth++;
+    else if (masked[i] === "}") depth--;
+  }
+  if (depth !== 0) return false;
+  const before = masked.slice(0, idx);
+  if (!/\bawait\s*$/.test(before)) return false;
+  const line = before.slice(before.lastIndexOf("\n") + 1);
+  return !/=>|\bfunction\b/.test(line);
+}
+
 // --- Agent / Task -------------------------------------------------------------
 
 // Subagent types whose definition frontmatter pins a non-Fable model; they are
@@ -282,6 +301,15 @@ if (toolName === "Agent" || toolName === "Task") {
     // fork subagents always inherit the parent model (Fable 5) and ignore the
     // model parameter — treat as a Fable spawn against the session cap.
     gateFableSpawn("this fork subagent (forks inherit Fable)");
+  }
+  if (String(ti.subagent_type || "").toLowerCase() === "advisor") {
+    // Advisors are the capability-graph guard's business: it sets the model one
+    // rung above the caller (Sonnet -> Opus, Opus -> Fable) via updatedInput and
+    // caps consultations at 2 per agent / 3 per session, the same size as
+    // FABLE_CAP. Counting them here too double-charged the Fable pool and, since
+    // both hooks run on the same call, burned a slot even when the graph guard
+    // then denied the consultation. Not counted here at all (2026-09-03).
+    process.exit(0);
   }
   const model = String(ti.model || "").toLowerCase();
   if (!model) {
@@ -308,7 +336,19 @@ if (toolName === "Workflow") {
       process.exit(0); // unreadable path — let the Workflow tool surface the real error
     }
   }
-  if (!script) process.exit(0); // named workflow — nothing to inspect
+  if (!script && ti.name) {
+    // Saved workflow: resolve the same way the tool does (project first, then user)
+    // so a named script gets the same lexical check as an inline one.
+    const os = require("os");
+    const path = require("path");
+    for (const p of [
+      path.join(process.cwd(), ".claude", "workflows", ti.name + ".js"),
+      path.join(os.homedir(), ".claude", "workflows", ti.name + ".js"),
+    ]) {
+      try { script = fs.readFileSync(p, "utf8"); break; } catch {}
+    }
+  }
+  if (!script) process.exit(0); // built-in named workflow — nothing to inspect
 
   const masked = maskLiterals(script);
   const calls = agentCalls(script, masked);
@@ -361,20 +401,24 @@ if (toolName === "Workflow") {
       );
     }
     const ranges = fanoutRanges(script, masked);
-    // Coarse on purpose. This used to require the fable call's own character
-    // offset to fall INSIDE a fan-out span, which one helper function defeats:
-    //   const spawn = () => agent({model:'fable'})   // outside every loop
-    //   for (let i=0;i<50;i++) await spawn()         // 50 Fable agents, allowed
-    // A lexical hook cannot follow that call graph, so it stops trying: a fable
-    // call anywhere in a script that fans out anywhere is denied. The asymmetry
-    // justifies it — a false positive costs one KILL-style marker append, a
-    // false negative cost a full 5-hour usage window on 2026-06-12.
-    const fannedOut = ranges.length > 0;
-    if (fannedOut) {
+    // A Fable call is allowed only as a standalone top-level `await agent(...)`:
+    // outside every fan-out span, at brace depth 0, directly after `await`, and
+    // not on a line that declares an arrow/function (a hoisted helper such as
+    // `const spawn = async () => await agent({model:'fable'})` called from a
+    // loop is the classic defeat). Fable synthesizers/judges after a fan-out
+    // are the intended use (changed 2026-09-01; before that any fan-out in the
+    // script denied every Fable call, which blocked legitimate synthesizers).
+    // ponytail: lexical heuristic — a multi-line brace-less arrow whose `await
+    // agent(` sits on its own line still slips through; the per-script cap of
+    // FABLE_CAP call sites bounds the damage.
+    const bad = fableCalls.filter((c) => !isStandaloneTopLevel(c.index, masked, ranges));
+    if (bad.length > 0) {
       deny(
-        "BLOCKED: this Workflow script spawns a fable-model agent() inside a fan-out construct (parallel/pipeline/map/loop) — one call site there can multiply into a fleet of Fable agents (the 2026-06-12 incident spawned 110 and burned a full 5h usage window). " +
+        "BLOCKED: this Workflow script has " +
+          bad.length +
+          " fable-model agent() call(s) that are not standalone top-level awaits — inside a fan-out construct (parallel/pipeline/map/loop), nested in a block or helper function, or not directly preceded by `await`. One such call site can multiply into a fleet of Fable agents (the 2026-06-12 incident spawned 110 and burned a full 5h usage window). " +
           HIERARCHY +
-          " Fable agent() calls must be standalone top-level awaits (e.g. a single judge or final synthesizer); use opus/sonnet/haiku inside fan-outs, then re-invoke."
+          " Fable synthesizers/judges are fine as `const x = await agent(..., {model: 'fable'})` at module top level AFTER the fan-out; use opus/sonnet/haiku inside fan-outs, then re-invoke."
       );
     }
   }

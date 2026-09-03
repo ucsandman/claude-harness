@@ -219,8 +219,14 @@ function main() {
     // PowerShell is a first-class tool on this machine and is in the matcher
     // (Write|Edit|MultiEdit|Bash|PowerShell). Without this case it fell to
     // `default: exit(0)` and every scan below was a no-op on half the surface.
+    // Shell-tool aliases across harnesses: Codex names it shell_command in
+    // transcripts and Bash at the hook layer; agy names it run_command. An
+    // unlisted name hits `default: exit(0)` and silently scans nothing.
     case 'Bash':
-    case 'PowerShell': {
+    case 'PowerShell':
+    case 'shell':
+    case 'shell_command':
+    case 'run_command': {
       // Block staging a real .env file (secrets must stay out of git).
       const env = gitAddsRealEnvFile(input.command);
       if (env) {
@@ -239,7 +245,7 @@ function main() {
   }
 
   // File-write tools: real env files legitimately hold secrets, so allow them.
-  const isCommandTool = toolName === 'Bash' || toolName === 'PowerShell';
+  const isCommandTool = ['Bash', 'PowerShell', 'shell', 'shell_command', 'run_command'].includes(toolName);
   if (!isCommandTool && isRealEnvFile(filePath)) process.exit(0);
 
   const where = filePath
