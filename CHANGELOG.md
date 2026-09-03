@@ -3,6 +3,20 @@
 Syncs from the private harness to this mirror. Dates are sync dates; the
 underlying changes usually landed over the preceding days.
 
+## 2026-09-03 (second sync)
+
+- Guard: `git-tree-guard` denies `git stash`, path checkouts, `restore`,
+  `reset --hard` and `clean` in shell calls. Born the same day: a reviewer in a
+  17-agent fix workflow stashed the shared tree, the pop conflicted, and a
+  25-file fix pass sat reverted under six concurrent agents. Override
+  `# GIT_TREE_OK: <why>`.
+- Workflows: the four saved workflow scripts are now mirrored
+  (`fix-findings`, `adversarial-review`, `tournament`, `understand`).
+  `fix-findings.js` injects a shared-working-tree block into every agent
+  prompt: no tree-mutating git, baselines from copies.
+- Docs: `harness-guards.md` gained the git-tree-guard section with the
+  incident and the 18-case self-test.
+
 ## 2026-09-03
 
 - Guards: `capability-graph-guard`, `fable-delegate-guard`, `batch-guard`,

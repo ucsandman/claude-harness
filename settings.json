@@ -2,7 +2,7 @@
   "spinnerVerbs": {
     "mode": "replace",
     "verbs": [
-      "ELEVATE FINANCIAL SERVICES LLC — Invest Mon - Exit Fri >…"
+      "OpenArt — Create stunning AI videos, from short films to…"
     ]
   },
   "statusLine": {
@@ -162,6 +162,12 @@
             "command": "node \"C:/Users/sandm/.claude/hooks/slow-command-guard.cjs\"",
             "timeout": 10,
             "statusMessage": "Checking background-test hygiene..."
+          },
+          {
+            "type": "command",
+            "command": "node \"C:/Users/sandm/.claude/hooks/git-tree-guard.cjs\"",
+            "timeout": 10,
+            "statusMessage": "Checking shared-worktree safety..."
           }
         ]
       },

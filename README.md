@@ -52,6 +52,13 @@ Three examples of what "incident-born" means:
 - **`git-hooks/pre-commit`** runs `hooks/secret-guard.cjs` over every staged
   file in every repo on the machine, whatever the language, because keys were
   once found sitting in plaintext on disk.
+- **`hooks/git-tree-guard.cjs`** exists because a reviewer in a 17-agent fix
+  workflow ran `git stash` to watch a test fail without its fix, the pop
+  conflicted on a sibling's edit, and a 25-file fix pass sat silently reverted
+  under six agents still working. Stash, path checkouts, restore, hard reset
+  and clean are now denied in shell calls; baselines come from copies
+  (`git show HEAD:<path>` into a scratch dir). `workflows/fix-findings.js`
+  says the same thing in every prompt it sends.
 
 The design stance behind all of it: a rule written in prose is a hope. A rule
 that matters gets a hook, the hook gets a probe that makes it fail on purpose,
@@ -103,6 +110,7 @@ gets logged, rather than a reason to switch the guard off.
 | `fable-delegate-guard.cjs` | PreToolUse, SessionStart, UserPromptSubmit | When the main loop runs on the top model, budgets its direct edits and denies shell code-writing, so implementation goes to cheaper subagents. Decisions, review and synthesis stay. | `# FABLE_OK: <why>` |
 | `batch-guard.cjs` | PreToolUse | Denies the fourth consecutive single-statement shell call or single Read/Glob/Grep. Profiling showed one call per turn was the largest single cost. | `# SEQ: <dependency>` |
 | `slow-command-guard.cjs` | PreToolUse | Denies backgrounded finite test runs and recursive grep/find rooted at a projects dir, home or a drive. Both hang sessions. | `BG_TEST_OK`, `SLOW_OK` |
+| `git-tree-guard.cjs` | PreToolUse | Denies `git stash`, `checkout`/`restore` of paths, `reset --hard`, `clean` in shell calls: a working tree that several agents edit is read-only to git. Reads, branches and commits pass. Prose mentioning the words is not a hit. | `# GIT_TREE_OK: <why>` |
 | `dev-server-guard.cjs` | PreToolUse, PostToolUse | Denies dev servers piped through `head`/`tail` or backgrounded without an explicit opt-in; reminds that stopping a wrapper on Windows leaves the children alive. | `DEV_SERVER_BG_OK` |
 | `scope-lock.cjs` | PreToolUse, UserPromptSubmit | Confines Edit/Write to a directory for the session. Arm with `scope-lock <dir>` as a prompt. | `scope-unlock` |
 | `repeat-tool-guard.cjs` | PostToolUse | Counts identical consecutive calls and escalates a reminder at 3, 5 and 8. Advisory, never blocks. | `REPEAT_GUARD_OFF=1` |
