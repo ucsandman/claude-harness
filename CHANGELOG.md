@@ -3,6 +3,24 @@
 Syncs from the private harness to this mirror. Dates are sync dates; the
 underlying changes usually landed over the preceding days.
 
+## 2026-09-03 (seventh sync)
+
+- `tools/memstale/`: memory provenance check. Every absolute path a memory
+  file names is checked against the disk; the verdict carries its counts
+  (`memories=824 paths_checked=598 missing=63 stale_memories=48` on first run).
+  `--mark` writes a `stale-since:` frontmatter line into a memory that names
+  something gone and clears it when the path returns. It never deletes.
+  URLs, env files, placeholders and unmounted drives are skipped; paths with
+  spaces (`C:\Program Files\x`) are re-joined before checking. Runs in the
+  nightly reflection grounding step, not on every prompt.
+- `workflows/fix-findings.js`: a fifth phase, Converge, capped at one pass.
+  After Verify, a fresh Opus reader takes the whole uncommitted diff without
+  the findings list and must return zero NEW defects. Anything it finds comes
+  back shaped as fix-findings input for the next call, never as a loop.
+- Both came from a Reddit exchange on harness design (task-scoped writer
+  isolation, memory provenance, convergence-based verification). The first
+  was already covered by worktrees and scope-lock.
+
 ## 2026-09-03 (sixth sync)
 
 - `hooks/rm-guard.cjs`: a PreToolUse gate on Bash and PowerShell that denies a

@@ -1,12 +1,13 @@
 export const meta = {
   name: 'fix-findings',
-  description: 'Apply confirmed review findings in disjoint ownership groups, review each fix, re-fix what the reviewer flags once, then run the verify command once',
+  description: 'Apply confirmed review findings in disjoint ownership groups, review each fix, re-fix what the reviewer flags once, run the verify command once, then one convergence read of the whole diff that must return zero NEW findings',
   whenToUse: 'Workflow({name:"fix-findings", args:{context, findings:[{file, files?, title, detail, fixHint?, severity?}], verify}}) — context = repo path + conventions; files = every file the fix may touch (all call sites of the same behaviour); verify = the exact shell command that must pass at the end (tests/lint/build).',
   phases: [
     { title: 'Fix', detail: 'one implementer per ownership group (every file a finding names)' },
     { title: 'Review', detail: 'read-only check of each group diff, naming any second call site' },
     { title: 'Refix', detail: 'one more round for flagged groups, ownership widened to the files the reviewer named' },
     { title: 'Verify', detail: 'run the verify command once, under a timeout' },
+    { title: 'Converge', detail: 'one read-only pass over the whole diff; done means zero new findings, not just the listed ones closed' },
   ],
 }
 
@@ -85,4 +86,26 @@ const verify = await agent(
   '\nReport pass/fail with the counts printed (tests run/passed/failed, lint errors). If it fails, quote the failing output verbatim. If it hangs past the timeout, that IS a failure: report the last test name printed and say it hung. Do not fix anything.',
   { label: 'verify', phase: 'Verify', model: 'sonnet', agentType: 'sonnet-implementer', effort: 'low' })
 
-return { groups: clean, refixed, stillFlagged, verify }
+// Convergence, capped at one pass. Per-group reviewers only ask "is the listed finding closed"; a fix pass is
+// done when a fresh reader of the WHOLE diff finds nothing new. One pass, never a loop: the 2026-09-03 declick
+// fix passes cost 3.7M tokens iterating, so a non-empty list here goes back to the operator as findings, which
+// feed straight into the next fix-findings call.
+phase('Converge')
+const CONVERGE = {
+  type: 'object', required: ['converged', 'newFindings'],
+  properties: {
+    converged: { type: 'boolean', description: 'true only when newFindings is empty' },
+    newFindings: { type: 'array', items: { type: 'object', required: ['file', 'title', 'detail'], properties: {
+      file: { type: 'string' }, files: { type: 'array', items: { type: 'string' } }, title: { type: 'string' }, detail: { type: 'string' }, severity: { type: 'string' },
+    } }, description: 'defects introduced or exposed by this fix pass that no original finding covers; shaped as fix-findings input' },
+  },
+}
+const converge = await agent(
+  a.context + SHARED_TREE + '\n\nREAD ONLY. A fix pass just closed these findings:\n' + JSON.stringify(a.findings.map((f) => ({ file: f.file, title: f.title })), null, 1) +
+  '\nVerify result: ' + String(verify).slice(0, 2000) +
+  '\nRead the ENTIRE uncommitted diff (git diff, git status for untracked files) once, as a stranger who did not see the findings. Report only NEW defects: something this pass introduced or exposed that no listed finding covers (a broken sibling caller, a test that now asserts the wrong thing, a duplicated helper left half-migrated, a dead import, a changed contract with an unchanged consumer). ' +
+  'Do not re-report the listed findings, do not report style, do not fix anything. converged=true means you read the whole diff and found nothing new; say the number of files you read.',
+  { label: 'converge', phase: 'Converge', model: 'opus', agentType: 'opus-owner', schema: CONVERGE })
+log('converge: ' + (converge && converge.converged ? 'converged' : (converge ? converge.newFindings.length + ' new findings' : 'agent lost')))
+
+return { groups: clean, refixed, stillFlagged, verify, converge }
