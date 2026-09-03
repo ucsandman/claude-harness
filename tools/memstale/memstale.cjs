@@ -53,7 +53,9 @@ const PATH_RE = /(?:(?<![A-Za-z0-9])[A-Z]:[\\/][^\s`"'<>|()\[\]{}*,;]+|(?<![A-Za
 // Skip things that look like paths but are not on this disk by design:
 // env files, temp dirs, placeholders (`...`, `x.sh`, `your.db`, `<slug>`),
 // prefixes that end in `-`/`_`/`.`, and anything carrying a control byte.
-const SKIP_RE = /\.env(\.example)?$|\.secrets|[\\/]tmp[\\/]|\bnode_modules\b|<[^>]+>|\$\{|\.\.\.|[\\/](x|X|your[.\w]*|x\.\w+)$|[-_.]$|[\x00-\x1f\x7f]/;
+// `C:\Program Files\Git\team` is Git Bash rewriting a URL path (`/team`) into
+// its install dir; memories that quote such a mangled path are not stale.
+const SKIP_RE = /\.env(\.example)?$|\.secrets|[\\/]tmp[\\/]|\bnode_modules\b|<[^>]+>|\$\{|\.\.\.|[\\/](x|X|your[.\w]*|x\.\w+)$|[-_.]$|[\x00-\x1f\x7f]|^C:[\\/]Program Files[\\/]Git[\\/]/i;
 const DRIVE_OK = {};
 function driveExists(p) {
   const d = p.slice(0, 1).toUpperCase();
@@ -125,7 +127,7 @@ function checkMemory(file) {
       const ext = extendAcrossSpaces(raw, text.slice(m.index + m[0].length, m.index + m[0].length + 80));
       if (ext) p = ext;
     }
-    if (seen.has(p)) continue;
+    if (seen.has(p) || SKIP_RE.test(p)) continue; // re-test: space re-joining can complete a skipped prefix
     seen.add(p);
     checked++;
     if (!exists(p)) missing.push(p);

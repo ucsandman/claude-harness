@@ -21,7 +21,9 @@ Runs in the nightly `/meditate` grounding step. Not a SessionStart hook: the
 count is for reflection, not for every prompt.
 
 Skipped on purpose: URLs, env and secrets files, temp dirs, placeholders
-(`...`, `x.sh`, `<slug>`), prefixes ending in `-`/`_`, drives not mounted.
+(`...`, `x.sh`, `<slug>`), prefixes ending in `-`/`_`, drives not mounted, and
+anything under `C:\Program Files\Git\` (Git Bash rewrites a URL path like
+`/team` into its install dir; a memory quoting that is not stale).
 `C:\Program Files\x` style paths are re-joined across spaces before checking.
 A run that checks zero paths says so beside its OK (L2).
 

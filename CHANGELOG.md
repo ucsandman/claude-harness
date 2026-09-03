@@ -12,7 +12,10 @@ underlying changes usually landed over the preceding days.
   something gone and clears it when the path returns. It never deletes.
   URLs, env files, placeholders and unmounted drives are skipped; paths with
   spaces (`C:\Program Files\x`) are re-joined before checking. Runs in the
-  nightly reflection grounding step, not on every prompt.
+  nightly reflection grounding step, not on every prompt. Same-day follow-up:
+  paths under `C:\Program Files\Git\` are skipped, since Git Bash rewrites a
+  URL path like `/team` into its install dir and a memory quoting that is not
+  stale (5 of the first run's 63 misses).
 - `workflows/fix-findings.js`: a fifth phase, Converge, capped at one pass.
   After Verify, a fresh Opus reader takes the whole uncommitted diff without
   the findings list and must return zero NEW defects. Anything it finds comes
