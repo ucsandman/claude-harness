@@ -3,6 +3,12 @@
 Syncs from the private harness to this mirror. Dates are sync dates; the
 underlying changes usually landed over the preceding days.
 
+## 2026-09-03 (third sync)
+
+- Guard: `capability-graph-guard` no longer caps advisor consultations (was 2
+  per agent, 3 per session). A blocked consultation becomes a guess, and a
+  guess costs more tokens than the advice. Counts stay in `--report`.
+
 ## 2026-09-03 (second sync)
 
 - Guard: `git-tree-guard` denies `git stash`, path checkouts, `restore`,

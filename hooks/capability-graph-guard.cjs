@@ -10,8 +10,10 @@
  *
  * The single upward edge is consultation, not delegation: any caller above
  * Haiku may spawn subagent_type "advisor" (read-only, returns guidance and
- * never owns the task), capped at 2 per calling agent and 3 per session so it
- * stays inside the operator's own Fable spawn cap.
+ * never owns the task). Consultations are counted for --report but never
+ * capped (Wes, 2026-09-03): a blocked consultation becomes a guess, and a
+ * guess in a fix pass costs more than the advice. Advisors do not count
+ * against agent-model-guard's Fable spawn cap either.
  *
  * The advisor is always ONE RUNG ABOVE ITS CALLER (Wes, 2026-09-03): Sonnet
  * consults Opus, Opus consults Fable, Fable consults Fable. A peer advisor
@@ -58,11 +60,9 @@ const path = require('path');
 const { sessionModel, newestAssistantModel } = require('./fable-delegate-guard.cjs');
 
 const RANKS = [[/fable/i, 3], [/opus/i, 2], [/sonnet/i, 1], [/haiku/i, 0]];
-const ADVISOR_PER_AGENT = 2;
-const ADVISOR_PER_SESSION = 3;
 const MAX_STATE_AGE_MS = 24 * 60 * 60 * 1000;
 
-const REASON_TEXT = '[capability-graph-guard] Capability graph: Fable -> Opus/Sonnet/Haiku; Opus -> Sonnet/Haiku; Sonnet -> Haiku; Haiku -> nobody. Delegation only flows downward; peers are not edges. The one upward edge is consultation: spawn subagent_type "advisor" (read-only guidance, ownership stays with you), at most 2 per agent and 3 per session; the guard picks its model, one rung above yours (Sonnet -> Opus, Opus -> Fable).';
+const REASON_TEXT = '[capability-graph-guard] Capability graph: Fable -> Opus/Sonnet/Haiku; Opus -> Sonnet/Haiku; Sonnet -> Haiku; Haiku -> nobody. Delegation only flows downward; peers are not edges. The one upward edge is consultation: spawn subagent_type "advisor" (read-only guidance, ownership stays with you), as often as a decision needs it; the guard picks its model, one rung above yours (Sonnet -> Opus, Opus -> Fable).';
 
 function rankOf(model) {
   if (typeof model !== 'string' || !model.trim()) return null;
@@ -365,22 +365,18 @@ function decide(payload = {}, opts = {}) {
     if (callerRank === 0) {
       return deny('advisor-haiku', 'Blocked: a Haiku agent consults nobody. Return the open question to whoever spawned you and let them decide.');
     }
+    // Counted for the report, never capped (Wes, 2026-09-03): a blocked consultation turns into a guess, and a
+    // guess in a fix pass costs more tokens than the advice would have. The count stays visible in --report.
     const file = advisorFile(sid, opts);
     const state = readJson(file, { total: 0, byCaller: {} });
     const key = agentId || 'main';
     const used = state.byCaller[key] || 0;
-    if (used >= ADVISOR_PER_AGENT) {
-      return deny('advisor-cap', `Blocked: this agent has already used its ${ADVISOR_PER_AGENT} advisor consultations. The answer has to come from your own reasoning or from a downward delegation.`);
-    }
-    if ((state.total || 0) >= ADVISOR_PER_SESSION) {
-      return deny('advisor-cap', `Blocked: this session has already used its ${ADVISOR_PER_SESSION} advisor consultations. The answer has to come from your own reasoning or from a downward delegation.`);
-    }
     state.total = (state.total || 0) + 1;
     state.byCaller[key] = used + 1;
     writeJson(file, state);
     const model = advisorModelFor(callerRank);
     record('advisor', model);
-    return { action: 'allow', kind: 'advisor', model, reason: `${NAMES[rankOf(model)]} advisor for a ${callerName} caller; ${used + 1} of ${ADVISOR_PER_AGENT} for this agent, ${state.total} of ${ADVISOR_PER_SESSION} for the session` };
+    return { action: 'allow', kind: 'advisor', model, reason: `${NAMES[rankOf(model)]} advisor for a ${callerName} caller; consultation ${used + 1} for this agent, ${state.total} for the session` };
   }
 
   // A fork inherits the parent model, so it is always a peer edge.

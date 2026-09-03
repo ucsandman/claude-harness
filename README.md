@@ -200,7 +200,7 @@ Zero-dependency, one directory each, each with its own README.
 | [`haiku-scout`](agents/haiku-scout.md) | Haiku | Mechanical lookups: file searches, symbol hunting, inventory tables, git history. |
 | [`sonnet-implementer`](agents/sonnet-implementer.md) | Sonnet | Feature slices and refactors within a defined scope. Given files, acceptance criteria and a verify command. |
 | [`opus-owner`](agents/opus-owner.md) | Opus | A large or risky task the main loop has scoped. May delegate downward. |
-| [`advisor`](agents/advisor.md) | one rung above the caller | One focused decision. Read-only, guidance only, capped per agent and per session. |
+| [`advisor`](agents/advisor.md) | one rung above the caller | One focused decision. Read-only, guidance only, never capped: a blocked consultation becomes a guess, and a guess costs more than the advice. |
 | [`security-reviewer`](agents/security-reviewer.md) | Opus | Read-only review of anything touching auth, billing, secrets, webhooks or database access. Findings only, never edits. |
 
 ## The meditation ladder
