@@ -2,11 +2,12 @@
 # Global pre-commit hook. Runs, in order:
 #   1. the repo's own .git/hooks/pre-commit, if it has one
 #   2. secret scan over EVERY staged file, any language
-#   3. manifest gate (silent unless armed for this repo)
+#   3. harness doc gates, inside ~/.claude only, when a .md or settings.json is staged
 #   4. ruff auto-fix + vulture dead-code report, staged Python only
-# Steps 2 and 3 were added 2026-08-11; before that this hook exited early on any
-# commit with no .py staged, so JS/TS repos got no checks at all.
-# See ~/.claude/docs/manifest-gate.md. Bypass everything: git commit --no-verify.
+# Step 2 was added 2026-08-11; before that this hook exited early on any commit
+# with no .py staged, so JS/TS repos got no checks at all. The manifest gate that
+# used to sit at step 3 was retired 2026-09-03 (hooks/archive/manifest-gate.cjs).
+# Bypass everything: git commit --no-verify.
 
 # ─── 1. Run repo-local hook first (if it exists) ───
 # When core.hooksPath is set, git skips .git/hooks/. We chain manually.
@@ -48,17 +49,7 @@ else
     echo "  ⚠ secret-guard SKIPPED (node or $SECRET_GUARD missing) — staged files were NOT scanned"
 fi
 
-# ─── 3. Manifest gate: does the commit match what was declared? ───
-# Silent unless a manifest is armed for this repo, so quick fixes are untouched.
-# See ~/.claude/docs/manifest-gate.md.
-MANIFEST_GATE="$HOME/.claude/hooks/manifest-gate.cjs"
-if command -v node &>/dev/null && [ -f "$MANIFEST_GATE" ]; then
-    if ! node "$(to_native "$MANIFEST_GATE")" check; then
-        exit 1
-    fi
-fi
-
-# ─── 3b. Harness doc gates (this repo only) ───
+# ─── 3. Harness doc gates (this repo only) ───
 # Word budgets, dead references, decision-note format, expired rules. Runs only
 # inside ~/.claude, only when a .md, settings.json, or SKILL.md is staged.
 # Everywhere else this is a no-op. See ~/.claude/docs/doc-standard.md.

@@ -17,11 +17,9 @@ Order:
 1. The repo's own `.git/hooks/pre-commit`, if it has one. When `core.hooksPath`
    is set git skips `.git/hooks/`, so the chain is manual.
 2. `secret-guard.cjs --scan-staged` over **every** staged file, any language.
-3. A manifest-gate step that no longer runs: the hook was retired to
-   `hooks/archive/` in 2026-09 and the step skips when the file is absent.
-4. Harness doc gates, inside `~/.claude` only, when a `.md` or `settings.json`
+3. Harness doc gates, inside `~/.claude` only, when a `.md` or `settings.json`
    is staged.
-5. On staged `.py` only: `ruff` auto-fixes imports and format, `vulture` reports
+4. On staged `.py` only: `ruff` auto-fixes imports and format, `vulture` reports
    dead code at 60% confidence and **blocks** without deleting anything.
 
 Bypass everything: `git commit --no-verify`.
