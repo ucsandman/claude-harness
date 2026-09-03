@@ -79,7 +79,8 @@ if [ -n "$HARNESS_ROOT" ] && [ "$HARNESS_ROOT" = "$HARNESS_EXPECT" ] && [ -f "$G
 fi
 
 # ─── 4. Collect staged Python files ───
-STAGED_PY=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.py$' || true)
+# skills-archive holds third-party skills kept for reference; their scripts are not ours to lint or prune.
+STAGED_PY=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.py$' | grep -v '^skills-archive/' || true)
 
 if [ -z "$STAGED_PY" ]; then
     # No Python files staged — nothing to do

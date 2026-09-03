@@ -3,6 +3,20 @@
 Syncs from the private harness to this mirror. Dates are sync dates; the
 underlying changes usually landed over the preceding days.
 
+## 2026-09-03 (fifth sync)
+
+- declick first: the working agreement, the ALWAYS block and the three lean
+  agents reach for a declick adapter before an MCP tool, WebFetch, a browser read
+  or a screenshot. `hooks/declick-nudge.cjs` (PreToolUse on `mcp__.*|WebFetch`,
+  advisory, once per adapter per session) says so mechanically; probe in
+  `hooks/tests/`. Rationale and inventory in `docs/declick-first.md`.
+- `git-tree-guard`'s incident narrative moved to
+  `docs/decisions/feature/2026-09-03-git-tree-guard.md`; `harness-guards.md`
+  keeps the summary.
+- `git-hooks/pre-commit`: the Python gate (ruff, vulture) skips `skills-archive/`,
+  which holds third-party skills kept for reference.
+- `windows-gotchas.md` gotcha 15: `node.exe` and POSIX `$HOME` in git hooks.
+
 ## 2026-09-03 (fourth sync)
 
 - `fable-delegate-guard`: direct-edit budget 8 to 20 per prompt (80 to 160

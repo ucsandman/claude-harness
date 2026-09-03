@@ -2,7 +2,7 @@
   "spinnerVerbs": {
     "mode": "replace",
     "verbs": [
-      "IONOS — Professional web hosting, domain registration, and…"
+      "Backpay.me — Get paid for your AI coding usage. npx backpay"
     ]
   },
   "statusLine": {
@@ -58,8 +58,7 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "fable[1m]",
-  "advisorModel": "opus",
+  "model": "claude-fable-5-1[1m]",
   "fallbackModel": [
     "sonnet",
     "haiku"
@@ -200,6 +199,17 @@
             "command": "node \"C:/Projects/agnostic-ai/engine/hooks/capability-graph-guard.cjs\"",
             "timeout": 10,
             "statusMessage": "Capability graph check..."
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__.*|WebFetch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/Users/sandm/.claude/hooks/declick-nudge.cjs\"",
+            "timeout": 5,
+            "statusMessage": "declick adapter check..."
           }
         ]
       }
@@ -580,9 +590,10 @@
       "effortLevel": "high"
     },
     "claude-fable-5-1": {
-      "effortLevel": "high"
+      "effortLevel": "medium"
     }
   },
+  "advisorModel": "opus",
   "autoUpdatesChannel": "latest",
   "skipDangerousModePermissionPrompt": true,
   "skipWorkflowUsageWarning": true,

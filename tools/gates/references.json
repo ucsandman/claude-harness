@@ -28,6 +28,8 @@
     "docs/decision-notes.md",
     "docs/decisions",
     "docs/decisions/feature/2026-08-17-repeat-tool-call-guard.md",
+    "docs/decisions/feature/2026-09-03-git-tree-guard.md",
+    "docs/declick-first.md",
     "docs/doc-standard.md",
     "docs/harness-guards.md",
     "docs/human-experience.md",

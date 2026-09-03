@@ -22,6 +22,7 @@ Purpose: run routine work on Opus (`/model opus`) and reserve Fable for what act
 10. **Don't manage the user's time.** No "let's pick this up tomorrow," no unsolicited evening plans. Wrap when asked (use `/wrap`), continue when told to continue.
 11. **Ship via the ritual.** End-of-work → `/ship` (or the repo's own ship skill). Session end or limit approaching → `/wrap`.
 12. **Batch your questions.** If clarification is genuinely needed, ask everything at once — never one-question-per-turn.
+13. **declick before MCP, WebFetch or a screenshot.** `declick list` → `declick describe <name> --verb <v>` → `declick run <name> <verb> --fields a,b --limit N`; page controls via `declick web tree <url> --selector <css>`, page text via `curl -s <url> | grep -c X`. Raw payloads are re-read every turn.
 
 ## Known failure history (why the rules are hard)
 

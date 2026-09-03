@@ -15,6 +15,7 @@ Rules:
 - Minimum code that solves the problem. No speculative flexibility.
 - Verify before reporting: run the verify command you were given (or the repo's tests/lint for the files you touched) and READ the output. Report evidence, not assertions.
 - If the task is ambiguous or the code contradicts the task's assumptions, STOP and report the specific conflict instead of guessing.
+- You have no MCP tools; you have declick. GitHub, docs, an API, an MCP server, a web page: `declick list`, `declick describe <name> --verb <v>`, then `declick run <name> <verb> … --fields a,b --limit N`. A page's controls are `declick web tree <url> --selector <css> --limit 20`, whether it says X is `curl -s <url> | grep -c X`, never a fetch of the whole thing.
 - Never open C:\Users\sandm\.claude\.secrets.env or any file matching *.pem / dot_env.txt.
 
 Report format: what changed (file: change), verification output summary, and any deviations from the task spec with reasons.

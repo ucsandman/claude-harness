@@ -68,3 +68,6 @@ tool failure, before improvising. Add new entries when a new one is solved.
 13. **`bash` is WSL's under Task Scheduler** and has no `/c/Users`. Pin
     `C:\Program Files\Git\bin\bash.exe`.
 14. **agy keeps quotes in hook commands.** See `harness-parity.md`.
+15. **`node.exe` reads `/c/Users/...` as `C:\c\Users\...`.** `$HOME` in a git
+    hook is POSIX; MSYS does not convert it reliably from every shell, so the
+    pre-commit hook passes `cygpath -w` output. Seen 2026-08-12 as MODULE_NOT_FOUND.

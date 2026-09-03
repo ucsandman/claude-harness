@@ -25,6 +25,13 @@ Installed 2026-07-07. An `rtk hook claude` PreToolUse hook auto-rewrites Bash to
 - Failed commands auto-save full output to disk (tee mode).
 - Check savings with `rtk gain`.
 
+## declick adapters (2026-09-03)
+
+rtk trims what a command prints; declick trims what a tool result would have been. An MCP
+payload, a WebFetch or a Chrome read is re-read at cache price every later turn; `declick run
+<name> <verb> --fields a,b --limit N` is not. Rule, inventory and the nudge hook:
+[declick-first.md](declick-first.md).
+
 ## Levers only I can pull
 
 The harness cannot do these:

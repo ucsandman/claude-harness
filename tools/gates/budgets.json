@@ -10,6 +10,7 @@
   "docs/human-experience.md": 800,
   "docs/machine-facts.md": 400,
   "docs/token-cache-discipline.md": 500,
+  "docs/declick-first.md": 700,
   "docs/windows-gotchas.md": 600,
   "docs/harness-guards.md": 700,
   "docs/plugin-hygiene.md": 600,
