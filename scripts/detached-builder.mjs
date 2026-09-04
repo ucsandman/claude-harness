@@ -85,6 +85,7 @@ if (cmd === 'run') {
     '- No em dashes in any copy, comments, or docs.',
     '- New projects live at C:\\Projects\\<slug>.',
     '- You are a one-shot claude -p run. The moment you end your turn the process exits and every background task, shell job, or child you started dies with it. NEVER use Bash run_in_background, Monitor, or "I will continue when it completes". Run long measurements in the foreground with an explicit timeout (split into chunks under 10 minutes each), read the output, and keep working until the whole brief is finished. (2026-09-04: a builder ended its turn waiting on a 27 minute background measurement and lost the rest of its work.)',
+    '- Your ONLY delivery channel is your final message. The launcher that started you delivers it to Wes on Telegram through OpenClaw. NEVER send Telegram, email, or any outbound message yourself, never write a sender script, and never run creds resolve or creds mint to obtain a messaging token. (2026-09-04: a builder wrote tg_send.py, pulled the pm arb bot token via creds, and reported from the wrong bot.)',
     '', '',
   ].join('\n')
   const prompt = GROUND_RULES + readFileSync(join(dir, 'prompt.md'), 'utf8')

@@ -3,6 +3,14 @@
 Syncs from the private harness to this mirror. Dates are sync dates; the
 underlying changes usually landed over the preceding days.
 
+## 2026-09-04 (ninth sync)
+
+- hooks/declick-nudge.cjs counts itself: the matcher now includes Bash and
+  PowerShell, the tool call right after a nudge is counted as followed (a shell
+  command naming declick) or ignored, and `declick doctor` reports the follow
+  rate under integration.nudge. Ships with declick 0.6.2.
+- settings.json carries the widened matcher.
+
 ## 2026-09-04 (eighth sync)
 
 - Communication and Output: anything the operator will post or send online

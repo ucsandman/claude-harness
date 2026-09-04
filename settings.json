@@ -1,15 +1,4 @@
 {
-  "spinnerVerbs": {
-    "mode": "replace",
-    "verbs": [
-      "No activity for 30 min - ads paused"
-    ]
-  },
-  "statusLine": {
-    "type": "command",
-    "command": "node \"C:\\\\Users\\\\sandm\\\\.kickbacks\\\\vibe-ads-statusline.mjs\"",
-    "padding": 0
-  },
   "env": {
     "DASHCLAW_BEHAVIOR_SAMPLES_ENABLED": "1",
     "DASHCLAW_BEHAVIOR_SAMPLES_DIR": "C:/Users/sandm/.dashclaw/behavior-samples",
@@ -219,7 +208,7 @@
         ]
       },
       {
-        "matcher": "mcp__.*|WebFetch",
+        "matcher": "mcp__.*|WebFetch|Bash|PowerShell",
         "hooks": [
           {
             "type": "command",
@@ -459,6 +448,11 @@
       }
     ]
   },
+  "statusLine": {
+    "type": "command",
+    "command": "node \"C:\\\\Users\\\\sandm\\\\.kickbacks\\\\vibe-ads-statusline.mjs\"",
+    "padding": 0
+  },
   "enabledPlugins": {
     "context7@claude-plugins-official": true,
     "frontend-design@claude-plugins-official": true,
@@ -600,13 +594,19 @@
   },
   "outputStyle": "Concise",
   "feedbackDrafts": "off",
+  "spinnerVerbs": {
+    "mode": "replace",
+    "verbs": [
+      "Romain C — Une alternance de 2 ans en cybersec / devops svp"
+    ]
+  },
   "effortLevel": "xhigh",
   "modelSettings": {
     "claude-fable-5": {
       "effortLevel": "high"
     },
     "claude-fable-5-1": {
-      "effortLevel": "medium"
+      "effortLevel": "high"
     }
   },
   "advisorModel": "opus",
