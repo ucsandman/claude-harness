@@ -77,7 +77,17 @@ if (cmd === 'launch') {
 
 if (cmd === 'run') {
   const dir = need('dir'); const cwd = need('cwd')
-  const prompt = readFileSync(join(dir, 'prompt.md'), 'utf8')
+  // Standing ground rules prepended to every builder brief (Wes, 2026-09-03: the
+  // TradesDesk builder wired @anthropic-ai/sdk because its brief never said not to).
+  const GROUND_RULES = [
+    'STANDING GROUND RULES (apply before the task below):',
+    '- Model calls in anything you build run through the Claude Code CLI (claude -p) or Codex CLI on the monthly subscription. NEVER the Anthropic API, never @anthropic-ai/sdk or api.anthropic.com, never an ANTHROPIC_API_KEY. Strip env vars starting with CLAUDE or ANTHROPIC_ before spawning the CLI.',
+    '- No em dashes in any copy, comments, or docs.',
+    '- New projects live at C:\\Projects\\<slug>.',
+    '- You are a one-shot claude -p run. The moment you end your turn the process exits and every background task, shell job, or child you started dies with it. NEVER use Bash run_in_background, Monitor, or "I will continue when it completes". Run long measurements in the foreground with an explicit timeout (split into chunks under 10 minutes each), read the output, and keep working until the whole brief is finished. (2026-09-04: a builder ended its turn waiting on a 27 minute background measurement and lost the rest of its work.)',
+    '', '',
+  ].join('\n')
+  const prompt = GROUND_RULES + readFileSync(join(dir, 'prompt.md'), 'utf8')
   const outFd = openSync(join(dir, 'claude.out.json'), 'w')
   const errFd = openSync(join(dir, 'claude.err.log'), 'w')
   const claudeArgs = ['-p', '--model', args.model, '--effort', args.effort, '--output-format', 'json',
@@ -100,9 +110,16 @@ if (cmd === 'run') {
       result = j.result || ''; cost = j.total_cost_usd != null ? ` est_cost=$${Number(j.total_cost_usd).toFixed(2)} (subscription, not billed)` : ''
     } catch (e) { result = `(no JSON result: ${e.message})` }
     writeFileSync(join(dir, 'report.md'), result)
-    writeFileSync(join(dir, 'DONE'), `${code}\n`)
-    log(dir, `claude exit=${code} killed=${killed}`)
-    const head = `Builder ${meta(dir).name} finished exit=${code}${killed ? ' (killed by timer)' : ''}${cost}\nReport: ${join(dir, 'report.md')}\n\n`
+    // Abandonment detector (2026-09-04): a claude -p run that ends its turn with a
+    // promise ("I'll continue when the background job completes") has exited, and
+    // its background work died with it. A short, promise-shaped result is a failure.
+    const promise = /\b(i'?ll|i will|will) (continue|resume|check back|report back)\b|waiting (on|for) (the )?(background|measurement|job|process)|when it (completes|finishes)|fallback fires/i
+    const abandoned = !killed && result.length < 600 && promise.test(result)
+    writeFileSync(join(dir, 'DONE'), `${abandoned ? 'abandoned' : code}\n`)
+    log(dir, `claude exit=${code} killed=${killed}${abandoned ? ' ABANDONED (ended turn with pending work)' : ''}`)
+    const head = abandoned
+      ? `Builder ${meta(dir).name} ABANDONED its work: it ended its turn waiting on a background job, so the process exited and the job died. Files may be on disk uncommitted. Relaunch from the worktree with a resume brief.${cost}\nReport: ${join(dir, 'report.md')}\n\n`
+      : `Builder ${meta(dir).name} finished exit=${code}${killed ? ' (killed by timer)' : ''}${cost}\nReport: ${join(dir, 'report.md')}\n\n`
     telegram(args.notify, head + result, dir)
     process.exit(0)
   })

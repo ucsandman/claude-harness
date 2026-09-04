@@ -3,6 +3,15 @@
 Syncs from the private harness to this mirror. Dates are sync dates; the
 underlying changes usually landed over the preceding days.
 
+## 2026-09-04 (eighth sync)
+
+- Communication and Output: anything the operator will post or send online
+  (Reddit, X, HN, LinkedIn, Discord, email, DMs, comments on other repos) is
+  drafted through the `wes-voice` skill first. A first draft in the
+  assistant's own register is a wasted round trip.
+- settings.json and scripts/detached-builder.mjs carry the harness's current
+  state.
+
 ## 2026-09-03 (seventh sync)
 
 - Rule 7, "Learn on every handoff": every gate (approval, ship, wrap, a
