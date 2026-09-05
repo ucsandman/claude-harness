@@ -67,9 +67,16 @@ function walk(dir, out = []) {
 }
 
 /**
- * Standing docs: the prose an agent or a human is expected to trust.
+ * Standing docs: the prose an agent or a human is expected to trust. Feeds
+ * checkSlop, checkRuleExpiry and (via livePointerDocs) checkRefRatchet.
  * Excludes docs/superpowers/ and docs/specs/ (working material, not standing
  * orders) and docs/decisions/archived/ (frozen — never edited, never gated).
+ *
+ * skills/<name>/SKILL.md is deliberately NOT included here (2026-09-05): those docs
+ * live in the `skills` git submodule, a different repo, and widening this list
+ * once fed 43 skill-derived paths into references.json on the next
+ * `--accept-refs` and made checkSlop trip on skill prose it never used to see.
+ * md-links alone gets the wider set — see mdLinkDocs().
  */
 function standingDocs() {
   const docs = [];
@@ -87,6 +94,11 @@ function standingDocs() {
   return docs;
 }
 
+/** standingDocs() plus skills/<name>/SKILL.md — the wider set checkMdLinks alone uses. */
+function mdLinkDocs() {
+  return [...standingDocs(), ...skillDocs()];
+}
+
 /** Active decision notes. `archived/` is frozen and deliberately excluded. */
 function decisionNotes() {
   const dir = path.join(ROOT, 'docs', 'decisions');
@@ -97,6 +109,29 @@ function decisionNotes() {
 }
 
 /**
+ * One level under skills/: `<name>/SKILL.md`. A skill directory can be a
+ * symlink or junction (`~/.claude/skills/claude-api` → `~/.agents/skills/...`),
+ * and `Dirent.isDirectory()` reports false for those on this machine, so a
+ * plain dirent check silently drops them — fall back to `statSync`, which
+ * follows the link. checkSkillMetadata (below) uses the identical fallback.
+ */
+function skillDocs() {
+  const skillsDir = path.join(ROOT, 'skills');
+  const docs = [];
+  if (!exists(skillsDir)) return docs;
+  for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {
+    if (entry.name.startsWith('.')) continue;
+    const dirPath = path.join(skillsDir, entry.name);
+    let isDir = entry.isDirectory();
+    if (!isDir) { try { isDir = fs.statSync(dirPath).isDirectory(); } catch { isDir = false; } }
+    if (!isDir) continue;
+    const skillFile = path.join(dirPath, 'SKILL.md');
+    if (exists(skillFile)) docs.push(skillFile);
+  }
+  return docs;
+}
+
+/**
  * Resolve a path reference found in prose to an absolute path.
  * Returns null for anything not checkable: URLs, anchors, globs, placeholders.
  */
@@ -104,9 +139,16 @@ function resolveRef(ref, fromFile) {
   let r = ref.trim().replace(/[.,;:)\]]+$/, '');
   if (!r) return null;
   if (/^(https?:|mailto:|#)/i.test(r)) return null;
-  if (/[*?<>]/.test(r)) return null; // glob or placeholder, not one path
+  if (/[*?<>{}]/.test(r)) return null; // glob or placeholder, not one path
   if (r.includes('${') || r.includes('$env:')) return null;
   r = r.replace(/\\/g, '/');
+  // Claude Code's own per-project MCP manifest is optional by design — a doc
+  // that lists it among the locations a script scans for is describing normal
+  // discovery, not a dead pointer (2026-09-05: skills/harness-health/SKILL.md
+  // names `~/.claude/.mcp.json`, absent on this machine, as one such location).
+  // Scoped to skills/ docs only — a standing doc naming a real .mcp.json path
+  // (docs/INDEX.md's own reference) must still be checked like any other file.
+  if (path.basename(r) === '.mcp.json' && rel(fromFile).startsWith('skills/')) return null;
   if (r.startsWith('~')) return path.join(HOME, r.slice(1));
   if (/^[A-Za-z]:\//.test(r)) return r;
   if (r.startsWith('/')) return null; // POSIX-absolute: not a path on this machine
@@ -140,13 +182,39 @@ function stripQuoted(text) {
  * Every path reference in a doc: markdown link targets plus backticked paths.
  * Bare prose paths are deliberately NOT scanned — too many false positives from
  * example commands. Reference a real file in a link or backticks and it is gated.
+ *
+ * `~`, a drive letter, or a `../` climb are unambiguous — always a candidate
+ * (docs/INDEX.md's `../.secrets.env` needs exactly this; there is no directory
+ * beside the doc named `.secrets.env` to check).
+ *
+ * A bare path (no leading dot) is accepted only when its first segment
+ * already exists beside the doc. That is the one mechanical signal that
+ * tells "skills/x/references/foo.md" — a real, checkable self-reference —
+ * apart from "studio/src/lib/audioMix.ts", a pointer into a different
+ * project the skill operates on (2026-09-05: naive widening hit 41 of them
+ * across 55 skills). A path written `./` (single dot — same directory, not a
+ * climb) is unconditional in a standing doc — a dead `./missing.md` in
+ * docs/INDEX.md must still be caught — but inside a skill's SKILL.md gets
+ * the same first-segment heuristic: `./phone-harness.cmd` reaches a script
+ * only after a `cd` into a different repo's root and is never relative to
+ * the skill's own directory — resolving it against skills/phone/ produced a
+ * false DEAD hit until `./` got this same check there.
  */
-function extractRefs(text) {
+function extractRefs(text, fromFile) {
   const refs = new Set();
   for (const m of text.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) refs.add(m[1]);
+  const underSkills = fromFile && rel(fromFile).startsWith('skills/');
   for (const m of text.matchAll(/`([^`\n]+)`/g)) {
     const v = m[1].trim();
-    if (!/^(~|[A-Za-z]:[\\/]|\.{1,2}[\\/])/.test(v)) continue;
+    const absolute = /^(~|[A-Za-z]:[\\/]|\.\.[\\/])/.test(v);
+    let candidate = absolute;
+    if (!absolute && !underSkills && /^\.[\\/]/.test(v)) candidate = true; // `./` in a standing doc is unconditional
+    if (!candidate && fromFile && !/\s/.test(v) && /[\\/]/.test(v)) {
+      const stripped = v.replace(/^\.[\\/]/, ''); // strip a leading ./ only — ../ is already `absolute` above
+      const first = stripped.split(/[\\/]/)[0];
+      if (first && !/[*?<>{}]/.test(first) && exists(path.join(path.dirname(fromFile), first))) candidate = true;
+    }
+    if (!candidate) continue;
     // A file (has an extension) or an explicit directory (trailing separator).
     // A bare path with neither is ambiguous prose and is left alone.
     if (/\.[a-z0-9]{1,5}$/i.test(v) || /[\\/]$/.test(v)) refs.add(v);
@@ -187,13 +255,18 @@ function checkDocBudgets(ctx) {
   return { ok, lines };
 }
 
-/** Every linked or backticked path in a standing doc resolves on this machine. */
+/**
+ * Every linked or backticked path in a standing doc resolves on this machine.
+ * Uses ctx.mdLinkDocs, not ctx.docs — standingDocs() plus skills/<name>/SKILL.md.
+ * The wider set is scoped to this one check; see mdLinkDocs().
+ */
 function checkMdLinks(ctx) {
   const lines = [];
   let ok = true;
   let checked = 0;
-  for (const doc of ctx.docs) {
-    for (const ref of extractRefs(read(doc))) {
+  const docs = ctx.mdLinkDocs;
+  for (const doc of docs) {
+    for (const ref of extractRefs(read(doc), doc)) {
       const abs = resolveRef(ref, doc);
       if (abs === null) continue;
       checked++;
@@ -203,7 +276,9 @@ function checkMdLinks(ctx) {
       }
     }
   }
-  if (ok) lines.push(`ok   ${checked} references across ${ctx.docs.length} docs all resolve`);
+  const skillCount = docs.filter((d) => rel(d).startsWith('skills/')).length;
+  if (ok) lines.push(`ok   ${checked} references across ${docs.length} docs (skills scanned=${skillCount}) all resolve`);
+  else lines.push(`      ${checked} references checked across ${docs.length} docs, skills scanned=${skillCount}`);
   return { ok, lines };
 }
 
@@ -344,7 +419,7 @@ function currentRefs(docs) {
   const set = new Set();
   const rootAbs = path.resolve(ROOT).toLowerCase();
   for (const doc of docs) {
-    for (const ref of extractRefs(read(doc))) {
+    for (const ref of extractRefs(read(doc), doc)) {
       const abs = resolveRef(ref, doc);
       if (abs === null) continue;
       const full = path.resolve(abs);
@@ -400,8 +475,12 @@ function checkSkillMetadata() {
   if (!exists(skillsDir)) return { ok: true, lines: ['ok   no skills/ directory'] };
   let count = 0;
   for (const entry of fs.readdirSync(skillsDir, { withFileTypes: true })) {
-    if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
-    const skillFile = path.join(skillsDir, entry.name, 'SKILL.md');
+    if (entry.name.startsWith('.')) continue;
+    const dirPath = path.join(skillsDir, entry.name);
+    let isDir = entry.isDirectory();
+    if (!isDir) { try { isDir = fs.statSync(dirPath).isDirectory(); } catch { isDir = false; } }
+    if (!isDir) continue;
+    const skillFile = path.join(dirPath, 'SKILL.md');
     if (!exists(skillFile)) continue;
     count++;
     const text = read(skillFile);
@@ -567,7 +646,7 @@ function main(argv) {
   // one doc breaks a link in another, and a staged-only scan misses exactly
   // that. --staged only changes what BLOCKS: see blocks() above.
   const staged = flags.has('--staged') ? stagedPaths() : null;
-  const ctx = { docs: standingDocs(), today: new Date().toISOString().slice(0, 10), staged };
+  const ctx = { docs: standingDocs(), mdLinkDocs: mdLinkDocs(), today: new Date().toISOString().slice(0, 10), staged };
   if (staged) console.log(`scope: --staged, ${staged.size} path(s) in the index decide what blocks; everything else warns`);
 
   const results = [];

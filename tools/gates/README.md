@@ -49,7 +49,7 @@ Exit 0 all green, 1 a check failed, 2 the runner broke.
 | id | Fails when |
 |---|---|
 | `doc-budgets` | A standing doc exceeds its `budgets.json` ceiling, or a budgeted file is gone |
-| `md-links` | A backticked path or markdown link in a standing doc does not resolve |
+| `md-links` | A backticked path or markdown link in a standing doc — including every `skills/*/SKILL.md` — does not resolve |
 | `ref-ratchet` | A path the docs used to point at is referenced nowhere any more |
 | `note-format` | A decision note breaks the format in `docs/decision-notes.md` |
 | `rule-expiry` | An `<!-- expires: YYYY-MM-DD -->` marker is past due |

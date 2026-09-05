@@ -597,7 +597,7 @@
   "spinnerVerbs": {
     "mode": "replace",
     "verbs": [
-      "Romain C — Une alternance de 2 ans en cybersec / devops svp"
+      "Coursera — Build job-ready skills with online courses…"
     ]
   },
   "effortLevel": "xhigh",
@@ -609,7 +609,6 @@
       "effortLevel": "high"
     }
   },
-  "advisorModel": "opus",
   "autoUpdatesChannel": "latest",
   "skipDangerousModePermissionPrompt": true,
   "skipWorkflowUsageWarning": true,
