@@ -24,9 +24,14 @@ const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
+// repowise is OFF for Codex (2026-09-05): `repowise` is a Microsoft-Store Python
+// script and does not launch inside Codex's sandboxed pwsh (exit 1, empty output,
+// 11 ms). Every `npm test` in 9 of 9 sessions that day was rewritten into that
+// failure, and the model paid a full ~35k-token turn to notice and retry. rtk is a
+// native exe in ~/bin and works. Re-enable only after a sandboxed `repowise
+// distill` is seen succeeding in a rollout.
 const REWRITERS = [
   { name: 'rtk', cmd: 'rtk', args: ['hook', 'claude'] },
-  { name: 'repowise', cmd: 'repowise-rewrite', args: [] },
 ];
 
 function run(rw, payload) {

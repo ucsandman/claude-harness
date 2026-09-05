@@ -3,6 +3,12 @@
 Syncs from the private harness to this mirror. Dates are sync dates; the
 underlying changes usually landed over the preceding days.
 
+## 2026-09-05 (twelfth sync)
+
+- Add a Codex adapter and probe for the delegate-first guard, and align the Fable delegate guard with it.
+- Update the harness guards and parity docs and the gate references for the new adapter.
+- Tighten the harness sync script.
+
 ## 2026-09-05 (eleventh sync)
 
 - Allow automatic context compaction, including sessions that cached the old hook.

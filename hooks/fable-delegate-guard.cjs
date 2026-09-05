@@ -138,7 +138,10 @@ function sessionModel(payload = {}, opts = {}) {
 
 // --- shell mutation detection ------------------------------------------------
 
-const MUTATING_WORDS = /\b(rm|rmdir|mv|cp|mkdir|touch|chmod|chown|ln|patch|truncate|tee)\b/i;
+// A mutating word must stand as its own token: `--no-patch`, `dotnet-rm` and
+// `foo.patch` are not commands (2026-09-05: `git show --no-patch` was denied in a
+// real Codex session through the shared classifier).
+const MUTATING_WORDS = /(?<![-\w.\/])(rm|rmdir|mv|cp|mkdir|touch|chmod|chown|ln|patch|truncate|tee)\b/i;
 const SED_INPLACE = /\bsed\s+(-[a-z]*\s+)*-[a-z]*i\b/i;
 // git and package installs are deliberately NOT here: committing, pushing and
 // installing are operator acts, not hands-on code writing, and guards.json

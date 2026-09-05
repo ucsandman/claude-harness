@@ -125,7 +125,8 @@ hook with its reason.
 
 | Guard | Why |
 |---|---|
-| `agent-model-guard`, `capability-graph-guard`, `fable-delegate-guard` | Police Claude's model ladder; Codex runs GPT |
+| `agent-model-guard`, `capability-graph-guard` | Police Claude's model ladder; Codex runs GPT |
+| `fable-delegate-guard` | Replaced by its Codex twin `hooks/adapters/codex-delegate-guard.cjs` (astra main loop, gated on the payload `model` field) |
 | `opus-handoff-inject` | Opus-specific |
 | `guard-canary`, `session-count` | Read Claude's own state; would report Claude's status from another harness |
 | `output-secret-watch` | Needs `MessageDisplay`, which only Claude Code has |
@@ -204,11 +205,15 @@ no longer generated or checked; its deletion was blocked by the local policy. Th
 `tools/harness-sync/codex-hooks.json`. All existing governance handlers are retained,
 including the TOML-reading liveness probe. Plugin and project trust records survive sync.
 
-Identical skill copies in .codex/skills and .agents/skills are disabled by static
-path entries in config.toml; differing entrypoints remain available. There is no
-recurring duplicate-selection pass. Deleting 21 byte-identical skill directories
-was blocked by local policy, so their exclusions and files remain intact.
-Skill discovery descriptions were shortened without changing instruction bodies.
+Duplicate skill copies are disabled by a generated `[[skills.config]]` region in
+config.toml (`# >>> harness-sync skills start`, written by `skillsConfigInCodex` in
+sync.cjs, `--check` catches drift): every real directory in `~/.codex/skills` whose
+name Codex already reads from `~/.agents/skills` or `~/.claude/skills`, plus the
+Codex plugin-tooling skills in `CODEX_SKILL_OFF` (plugin-creator, skill-installer,
+review-agent, plugin-management). Parity rule (Wes, 2026-09-05): Codex has every
+skill Claude has, so nothing else is hidden. Effect that day: catalog 21.9k → 19.5k
+chars, 121 → 115 entries, about 600 tokens per turn. The 21 byte-identical
+directories still exist (deletion blocked by policy); they are just disabled.
 Bundled system and plugin skill files are left under their upstream owners.
 
 Treg uses `tools/harness-sync/treg-mcp.py`, a stdio bridge built on the already

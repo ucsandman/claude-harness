@@ -186,8 +186,9 @@ Guards active in this harness (generated into config.toml, pre-trusted):
 ${guards}.
 Contract for each, including the override markers: \`~/.claude/docs/harness-guards.md\`.
 
-Not ported on purpose: agent-model-guard, capability-graph-guard and
-fable-delegate-guard (they police Claude's model ladder), opus-handoff-inject,
+Not ported on purpose: agent-model-guard and capability-graph-guard (they police
+Claude's model ladder), fable-delegate-guard (its Codex twin is
+\`codex-delegate-guard\`, see Delegation below), opus-handoff-inject,
 guard-canary, session-count, output-secret-watch (Claude-only events or state),
 context-nudge (reads Claude's statusline). Full table: \`~/.claude/docs/harness-parity.md\`.
 
@@ -203,21 +204,44 @@ facts into that same directory with the same frontmatter and index line; Claude 
 reads it too. Codex's native memories (\`~/.codex/memories\`) stay on as a recall layer,
 never as the only home of a rule.
 
-## Delegation in Codex
+## Delegation in Codex (delegate-first)
 
-The Opus/Fable/Sonnet/Haiku ladder maps onto custom agents generated from
-\`~/.claude/agents\` into \`~/.codex/agents/\`: ${agents}.
+The main loop is \`${model}\`, the expensive rung, and it is a **planner, not a
+typist**: it reads enough to write a brief, decides, reviews, and answers. Every
+implementation, exploration and long-output job goes to a child on a cheaper
+model. Measured 2026-09-05: 224 sessions, 33,407 shell calls, zero spawns since
+June; that is the token bill Wes is paying for. The ladder maps onto custom agents
+generated from \`~/.claude/agents\` into \`~/.codex/agents/\`: ${agents}.
 Spawn one with \`spawn_agent\` and \`agent_type: "<name>"\`; the agent file fixes the
-model and effort, so do not pass \`model\` unless you mean to override it.
+model and effort, so never pass \`model\`: a bare astra child costs astra prices for
+terra work. Codex's own runtime note says "do not spawn sub-agents unless AGENTS.md
+explicitly asks": this section is that explicit ask.
 
-| Claude rung | Codex model | effort | use |
+| agent_type | Codex model | effort | route here when |
 |---|---|---|---|
-${CODEX_MODEL_LADDER.map(([c, m, e]) => `| ${c} | \`${m}\` | ${e} | ${c === 'fable' ? 'architecture, security review, judge/synthesis (max 3 per session)' : c === 'opus' ? 'large or risky implementation, root-cause hunts, final review' : c === 'sonnet' ? 'scoped implementation slices, tests, review legwork' : 'lookups, greps, inventories, mechanical edits'} |`).join('\n')}
+${CODEX_MODEL_LADDER.map(([c, m, e]) => `| ${c === 'fable' ? 'advisor' : c === 'opus' ? 'opus-owner' : c === 'sonnet' ? 'sonnet-implementer' : 'haiku-scout'} | \`${m}\` | ${e} | ${c === 'fable' ? 'one focused architecture or security judgment; read-only; max 3 per session' : c === 'opus' ? 'the job spans many files, needs a root-cause hunt, touches auth/billing/migrations, or a terra attempt already failed' : c === 'sonnet' ? 'DEFAULT: a scoped slice (one feature, one test file, a refactor inside named files, a review of one diff)' : 'greps, inventories, "where is X", mechanical edits across files'} |`).join('\n')}
 
-Same economics as the Claude agreement: a spawn costs tens of thousands of tokens
-before its first tool call, so anything under about ten tool calls or eighty
-edited lines is cheaper in the main thread. Give children a clean context
-(\`fork_turns: "none"\`), wait in bounded stretches with \`wait_agent\`, never poll.
+Pick the rung by complexity, terra first: if the brief fits in one paragraph with
+named files and a verify command, it is terra work; if you cannot name the files
+yet, send haiku-scout to find them, then terra; sol only for the cases in the
+table. Give a child a clean context (\`fork_turns: "none"\`), a precise brief
+(files, acceptance criteria, verify command) and collect with ONE \`wait_agent\`
+call with \`timeout_ms\` of 600000 or more. Measured 2026-09-05: every wait_agent
+return is a full astra turn over the whole context (about 34k input tokens each);
+three 10-second polls cost more than the child's entire job. A spawn is not free
+either (the child re-reads this file and the tool catalog), so batch related small
+edits into one brief rather than one child per line; independent slices run in
+parallel (up to 8 threads).
+
+Enforced by \`codex-delegate-guard\` while the model is astra: code-writing through
+the shell (redirects, heredocs, \`sed -i\`, \`tee\`, inline node/python writers) is
+denied outside \`~/.claude\`, \`~/.codex\` and temp; \`apply_patch\` is budgeted to
+12 patches of at most 120 added lines per turn (a fix-up stays here, a feature
+goes to a child). Reads, tests, lint, git and installs are always allowed.
+(Collaboration tools are not hookable in Codex 0.153, so the model choice for a
+child is prose, not a guard.) Override one shell command with \`# ASTRA_OK: <why>\` (logged). Wes saying
+"hands-on" in a prompt suspends the guard for the session; "delegate again"
+restores it. Report: \`node ~/.claude/hooks/adapters/codex-delegate-guard.cjs --report\`.
 
 ## Slash commands
 
@@ -309,6 +333,71 @@ function skillCandidates(readsAgentsSkills) {
     names.push(e.name);
   }
   return names.sort();
+}
+
+// Codex re-sends its whole skills catalog every turn (21.9k chars on 2026-09-05,
+// 121 entries). Parity with Claude is the rule, so nothing Claude has is hidden;
+// what IS hidden: (a) a real directory in ~/.codex/skills that duplicates a skill
+// Codex already reads from ~/.agents/skills or ~/.claude/skills (listed twice
+// otherwise), (b) Codex's own plugin-tooling skills that are not work skills.
+// Written as [[skills.config]] enabled=false entries in a marked region of
+// config.toml, so the list is derived and --check catches drift.
+const CODEX_SKILL_OFF = [
+  ['skills/.system/plugin-creator/SKILL.md', 'Codex plugin scaffolding, not a work skill'],
+  ['skills/.system/skill-installer/SKILL.md', 'Codex skill installer; skills are synced from ~/.claude'],
+  ['skills/.system/review-agent/SKILL.md', 'Codex review agent; the harness has its own review path'],
+  ['plugins/cache/openai-curated-remote/plugin-management/*/skills/plugin-management/SKILL.md', 'Codex plugin management, not a work skill'],
+];
+
+function codexDisabledSkills() {
+  const found = [];
+  const dir = path.join(CODEX_HOME, 'skills');
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (e.name.startsWith('.') || e.isSymbolicLink() || !e.isDirectory()) continue;
+    const dup = ['.agents', '.claude'].find((root) => fs.existsSync(path.join(HOME, root, 'skills', e.name, 'SKILL.md')));
+    if (dup && fs.existsSync(path.join(dir, e.name, 'SKILL.md'))) found.push(path.join(dir, e.name, 'SKILL.md'));
+  }
+  for (const [pattern] of CODEX_SKILL_OFF) {
+    const parts = pattern.split('/');
+    let candidates = [CODEX_HOME];
+    for (const part of parts) {
+      candidates = candidates.flatMap((base) => {
+        if (part !== '*') return [path.join(base, part)];
+        try { return fs.readdirSync(base).map((n) => path.join(base, n)); } catch { return []; }
+      });
+    }
+    for (const c of candidates) if (fs.existsSync(c)) found.push(c);
+  }
+  return [...new Set(found)].sort();
+}
+
+function skillsConfigInCodex(out) {
+  const toml = read(CODEX_CONFIG);
+  if (toml == null) return false;
+  const START = '# >>> harness-sync skills start — generated, do not edit';
+  const END = '# <<< harness-sync skills end';
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const disabled = codexDisabledSkills();
+  const block = disabled.map((p) => `[[skills.config]]\npath = ${JSON.stringify(p.replace(/\//g, '\\'))}\nenabled = false`).join('\n\n');
+  let next = toml
+    .replace(new RegExp(`\\n*${esc(START)}[\\s\\S]*?${esc(END)}\\n?`, 'g'), '\n')
+    .replace(/^# Identical local skill copies are disabled; shared skills remain available\.\r?\n/gm, '')
+    .replace(/^\[\[skills\.config\]\]\r?\npath = "[^"]*"\r?\nenabled = (?:true|false)\r?\n(?:\r?\n)?/gm, '');
+  const region = `${START}\n${block}\n${END}\n`;
+  const anchor = '# >>> harness-sync hook trust start';
+  next = next.includes(anchor) ? next.replace(anchor, `${region}\n${anchor}`) : next.replace(/\s*$/, '\n\n') + region;
+  next = next.replace(/\n{3,}/g, '\n\n');
+  if (next === toml) {
+    out.push(`  skills: ${disabled.length} Codex-side skill entries already disabled in config.toml`);
+    return false;
+  }
+  if (CHECK_ONLY) {
+    out.push(`  STALE  skills.config region in config.toml (${disabled.length} entries)`);
+    return true;
+  }
+  fs.writeFileSync(CODEX_CONFIG, next);
+  out.push(`  skills: wrote ${disabled.length} disabled skill entries into config.toml`);
+  return true;
 }
 
 /**
@@ -443,10 +532,23 @@ function codexExtraHooks() {
         matcher: 'Bash',
         hooks: [{ type: 'command', command: H('adapters/codex-rewrite.cjs'), timeout: 8, statusMessage: 'rtk/repowise rewrite...' }],
       },
+      {
+        // Delegate-first for an astra main loop (Codex twin of fable-delegate-guard).
+        matcher: 'Bash|apply_patch|spawn_agent|wait_agent',
+        hooks: [{ type: 'command', command: H('adapters/codex-delegate-guard.cjs'), timeout: 10, statusMessage: 'Delegate-first check...' }],
+      },
     ],
     SessionStart: [
       {
         hooks: [{ type: 'command', command: H('codex-memory-inject.cjs'), timeout: 10, statusMessage: 'Loading shared memory...', additionalContextLimit: 12000 }],
+      },
+      {
+        hooks: [{ type: 'command', command: H('adapters/codex-delegate-guard.cjs'), timeout: 10 }],
+      },
+    ],
+    UserPromptSubmit: [
+      {
+        hooks: [{ type: 'command', command: H('adapters/codex-delegate-guard.cjs'), timeout: 10 }],
       },
     ],
   };
@@ -772,6 +874,7 @@ function main() {
   if (pruneGenerated(path.join(CODEX_HOME, 'prompts'), prompts.map((p) => path.basename(p.file)), '.harness-sync.json', out)) stale++;
 
   if (linkSkills(path.join(CODEX_HOME, 'skills'), skills, out) && CHECK_ONLY) stale++;
+  if (skillsConfigInCodex(out) && CHECK_ONLY) stale++;
 
   // --- agy -----------------------------------------------------------------
   if (emit(path.join(HOME, '.gemini', 'GEMINI.md'), buildRules(AGY_PREAMBLE, body, soul), 'agy rules', out)) stale++;
