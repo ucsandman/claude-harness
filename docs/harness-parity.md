@@ -1,29 +1,79 @@
 # Harness parity — Claude Code, Codex CLI, Antigravity CLI
 
-One safety layer, three agents. Built 2026-08-17. Live status page:
-`node ~/.claude/tools/harness-sync/parity.cjs --open`
+One safety layer, three agents. Built 2026-08-17, made fully generated 2026-09-05.
+Live status page: `node ~/.claude/tools/harness-sync/parity.cjs --open`
 
 ## The design
 
-The guards are **not** copied into each harness. `~/.codex/hooks.json` and
+The guards are **not** copied into each harness. `~/.codex/config.toml` and
 `~/.gemini/config/hooks.json` point at the same scripts in `~/.claude/hooks`, so a
 fix lands in all three at once and there is no second copy to drift. Same for
 skills: they are Windows **junctions** into `~/.claude/skills`, not copies.
 
-The rules files are generated, not hand-written:
+Every Codex-side file is generated from a Claude-side source by
+`node ~/.claude/tools/harness-sync/sync.cjs` (daily via the `HarnessParitySync`
+task; `--check` exits 1 on drift and writes nothing):
 
 ```
-~/.claude/CLAUDE.md + SOUL.md   ->  ~/.codex/AGENTS.md
-   (source of truth)            ->  ~/.gemini/GEMINI.md
+~/.claude/CLAUDE.md + SOUL.md   ->  ~/.codex/AGENTS.md, ~/.gemini/GEMINI.md
+~/.claude/settings.json + tools/harness-sync/codex-hooks.json
+                              ->  ~/.codex/config.toml hooks + trust
+~/.claude/agents/*.md           ->  ~/.codex/agents/*.toml  (custom subagents)
+~/.claude/commands/*.md         ->  ~/.codex/prompts/*.md   (/prompts:<name>)
+~/.claude/skills/*              ->  ~/.codex/skills/<name>  (junctions; all but 6 Claude-only)
+~/.agents/memory + ~/.claude/projects/<slug>/memory  ->  injected at Codex SessionStart
 ```
 
-`node ~/.claude/tools/harness-sync/sync.cjs` regenerates both and re-links skills.
-`--check` exits 1 if either is stale and writes nothing.
+Why generated: the rules files were hand-written in June 2026 and never touched
+again while CLAUDE.md kept growing; by 2026-08-17 Codex ran a three-month-old
+agreement. Then the former hand-wired Codex hooks.json was overwritten in a flat
+format by agnostic-ai's first-run installer on 2026-08-18 and emptied by Codex's own
+startup repair on 2026-09-05: for three weeks Codex had no guards, no shared memory,
+and an AGENTS.md naming a model that was no longer configured. A hand-wired file has
+no source to be regenerated from, so nothing noticed. Everything is derived now.
 
-Why generated: both files were hand-written in June 2026 and never touched again
-while CLAUDE.md kept growing (the meditation ladder promotes rules into it). By
-2026-08-17 Codex and agy were running a three-month-old agreement. Three
-hand-maintained copies is what caused that.
+## Hooks: translation and trust (2026-09-05)
+
+`codexHooks()` in sync.cjs walks settings.json and rewrites matchers
+(`Bash|PowerShell` -> `Bash`; `Edit|Write|MultiEdit|NotebookEdit` -> `Edit|Write`,
+which Codex aliases to `apply_patch`; `Read|Glob|Grep|TaskStop|WebFetch` dropped).
+Hooks in `HOOK_EXCLUDE` are skipped with a printed reason; everything else is copied
+verbatim, so a guard added to settings.json reaches Codex on the next sync. Two
+Codex-only adapters are appended: `hooks/adapters/codex-rewrite.cjs` (rtk +
+repowise; Codex only honours `updatedInput` with `permissionDecision: allow`, and
+repowise's `ask` is unsupported there) and `hooks/codex-memory-inject.cjs`.
+
+Codex refuses to run a hook until its definition is trusted (`/hooks` in the TUI).
+The sync pre-trusts what it generates: Codex's identity hash is sha256 over the
+canonical JSON of `{event_name, matcher?, hooks:[normalized handler]}`
+(`codex-rs/hooks/src/engine/discovery.rs::hook_hash`, tag rust-v0.153.4), which
+`hookHash()` reproduces and `selfTestTrustHash()` proves against a hash Codex wrote
+itself that morning. If the scheme ever changes the self-test fails loudly and the
+sync says to trust by hand instead of writing hashes that never match.
+
+Two Codex details that bit: `apply_patch` reports `tool_input.command` = the whole
+patch, so secret-guard grew an `apply_patch` case (before it hit `default: exit(0)`
+and scanned nothing Codex wrote); and `Stop` hooks must print JSON or nothing, never
+plain text.
+
+## Memory, agents, prompts
+
+Codex has its own memory store (`~/.codex/memories`, native feature) but it never saw
+Claude's: the identity in SOUL.md, the profile and project map in `~/.agents/memory`,
+or Claude Code's per-project auto-memory. `codex-memory-inject.cjs` now hands every
+Codex session the project map, the named facts, and `MEMORY.md` for the cwd's Claude
+project slug, and tells it to save new facts into that same directory. Verified
+2026-09-05: `codex exec` asked for the first project slug answered `agent-capsule`.
+
+The five Claude agents become Codex custom agents with the model ladder mapped
+(fable -> gpt-6-astra/high, opus -> gpt-5.6-sol/high, sonnet -> gpt-5.6-terra/medium,
+haiku -> gpt-5.6-luna/low; slugs from `~/.codex/models_cache.json`), read-only ones
+get `sandbox_mode = "read-only"`. `[agents]` in config.toml mirrors the 8-concurrent
+cap and routes model-less spawns to the terra tier. Custom commands become
+`/prompts:<name>` (Codex's deprecated-but-working custom prompts).
+
+Config additions outside the sync (config.toml, harness-parity block): MCP `mole`
+and `treg` mirrored from `~/.claude.json`; DashClaw behaviour-sample env vars.
 
 ## What already covered every harness before any of this
 
@@ -35,7 +85,7 @@ agy commits from day one. Only the in-session guards needed porting.
 
 | | Claude Code | Codex CLI | Antigravity CLI |
 |---|---|---|---|
-| config | `settings.json` | `hooks.json` + `config.toml` | `~/.gemini/config/hooks.json` |
+| config | `settings.json` | `config.toml` | `~/.gemini/config/hooks.json` |
 | top-level key | event name | event name | **hook name**, event nested |
 | payload case | snake_case | snake_case | camelCase (protojson) |
 | command field | `tool_input.command` | `tool_input.command` | `toolCall.args.CommandLine` |
@@ -70,14 +120,25 @@ silently scanned nothing — the same way PowerShell was missed until 2026-08.
 
 ## Deliberately not ported
 
+The authoritative list is `HOOK_EXCLUDE` in sync.cjs; each run prints every skipped
+hook with its reason.
+
 | Guard | Why |
 |---|---|
-| `agent-model-guard` | Caps Claude's Fable spawns; no equivalent routing to police |
+| `agent-model-guard`, `capability-graph-guard`, `fable-delegate-guard` | Police Claude's model ladder; Codex runs GPT |
 | `opus-handoff-inject` | Opus-specific |
 | `guard-canary`, `session-count` | Read Claude's own state; would report Claude's status from another harness |
 | `output-secret-watch` | Needs `MessageDisplay`, which only Claude Code has |
-| `bg-test-guard`, `no-auto-compact` (agy only) | agy has no `run_in_background` flag and no `PreCompact` event |
+| `context-nudge` | Reads the Claude statusline's context percentage |
+| DashClaw pretool/posttool/stop/liveness | Codex has its own DashClaw block in config.toml (`--agent-id codex`) |
+| `bg-test-guard` (agy only) | agy has no `run_in_background` flag |
 | `skill-telemetry`, `sync-main-checkout` | Housekeeping; three agents running the same git sync invites conflicts |
+
+Skills not linked (`SKILL_EXCLUDE`): adversarial-review (Workflow tool), show-me
+(Artifact), meditate and harness-health (Claude's own state), team and fable-gpt
+(orchestrate Claude/Codex from a Claude session). Skills that also live in
+`~/.agents/skills` are not linked into Codex because Codex reads that directory
+natively and would list them twice.
 
 **Scheduled tasks are deliberately not triplicated.** The nine Task Scheduler jobs
 (FleetBriefing7am, NightlyMeditation, HarnessAudit, ...) all drive `claude -p`.
@@ -102,25 +163,67 @@ Two MCP servers were also skipped on purpose:
   **chained into one entry** with the adapter's `++` separator. This is why
   `~/.gemini/config/hooks.json` has one PreToolUse entry, not five.
 - **agy reasons are ASCII-folded and capped at 400 chars** by the adapter.
-- **Codex is already at its skill-description budget** and warns that it shortened
-  descriptions to fit. Adding skills there costs the others clarity, which is why
-  19 curated skills are shared and not all 52. Trim with `/skills` in Codex.
+- **Codex shortens skill descriptions when the list outgrows its budget** (the
+  skills doc says so). Since 2026-09-05 every applicable skill is linked anyway:
+  Wes asked for identical capabilities, and a shortened description beats an absent
+  skill. If a skill stops triggering in Codex, tighten its description first.
 - **Codex warns if hooks live in both `hooks.json` and `config.toml`.** They do:
   DashClaw manages a block in `config.toml`. Pre-existing and harmless.
-- **New Codex hooks need trusting** (`/hooks` in the TUI) on first interactive use.
-  `codex exec` ran them without a prompt.
+- **New Codex hooks need trusting** (`/hooks` in the TUI) unless a matching
+  `[hooks.state]` entry exists; the sync writes those (see Hooks above).
+- **A third-party installer can silently break a harness file.** agnostic-ai's
+  first-run wrote `{"pre_tool_use": "..."}` into the former Codex hooks.json, a format Codex
+  never read; Codex later "repaired" it to `hooks: {}`. first-run.cjs now leaves any
+  hooks.json that already carries a `hooks` object alone.
 - **context7 over HTTP silently did not load in agy**; the stdio server
   (`npx -y @upstash/context7-mcp@4.0.2`) worked first try. Both harnesses use stdio.
 
 ## Verifying the port
 
 ```sh
-node ~/.claude/tools/harness-sync/sync.cjs --check      # rules in sync?
+node ~/.claude/tools/harness-sync/sync.cjs --check      # every generated file in sync?
 sh   ~/.claude/hooks/adapters/test-agy-adapter.sh       # guards block AND pass?
 node ~/.claude/tools/harness-sync/parity.cjs --open     # the rendered picture
+codex exec -m gpt-5.6-luna "name the first project slug you were given at session start"   # memory + hooks live?
 ```
 
+The last line is the end-to-end proof: the answer comes from the injected memory,
+and any "hooks need review" warning means the trust entries did not match.
+
 The parity page reads every cell from disk, so it cannot claim a guard is wired
-after someone removes it. Verified by deleting one from `~/.codex/hooks.json` and
+after someone removes it. Verified by deleting one from `~/.codex/config.toml` and
 watching the count drop to 9/10 (rule L1: a check never seen failing is not
 verified).
+
+
+## Codex startup cleanup (2026-09-05)
+
+Hook definitions and trust now share config.toml. The generator archives the old
+hooks.json instead of deleting it. The unused hooks.generated.json snapshot is
+no longer generated or checked; its deletion was blocked by the local policy. The Codex-specific source is
+`tools/harness-sync/codex-hooks.json`. All existing governance handlers are retained,
+including the TOML-reading liveness probe. Plugin and project trust records survive sync.
+
+Identical skill copies in .codex/skills and .agents/skills are disabled by static
+path entries in config.toml; differing entrypoints remain available. There is no
+recurring duplicate-selection pass. Deleting 21 byte-identical skill directories
+was blocked by local policy, so their exclusions and files remain intact.
+Skill discovery descriptions were shortened without changing instruction bodies.
+Bundled system and plugin skill files are left under their upstream owners.
+
+Treg uses `tools/harness-sync/treg-mcp.py`, a stdio bridge built on the already
+installed Python MCP SDK. It reads the existing Treg CLI login at startup and
+connects only to https://treg.to/mcp/. Tokens are never copied into Codex config.
+If the CLI login expires, sign in through Treg and restart the MCP connection.
+
+Verification: fresh Codex app-server MCP discovery returned tools from all 11
+integrations, and Treg's balance call succeeded. Sync --check is idempotent.
+Rollback copies for this repair are in .codex/tmp/harness-cleanup locally.
+
+Final startup validation: the installed Codex CLI completed a no-tool first turn
+with exit 0 and response OK, with no duplicate-hook, skill-shortening, login, or
+MCP-startup warnings. Active skill description text fell from 36,740 to 13,441
+characters (63.4%); 116 registrations remain active and 22 identical copies are
+disabled. Description-only changes covered 122 local skill files, including copies.
+All changed frontmatter parsed, all instruction bodies matched their backups,
+and all eight independent plugin/project hook trust records were preserved.

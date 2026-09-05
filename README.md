@@ -5,6 +5,10 @@ hooks, a model-routing policy that is enforced rather than suggested, a dozen
 small zero-dependency tools, and a nightly self-reflection loop that promotes
 observations into rules only when the evidence earns it.
 
+Every added mechanism should reduce future supervision enough to justify its
+ongoing cost. Automatic context compaction is allowed. Reflection is measured
+by better later decisions, and nightly artifact production is optional.
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2011-0078d4)](docs/windows-gotchas.md)
 [![Runtime](https://img.shields.io/badge/runtime-Node%20%2B%20PowerShell%20%2B%20Python-333)](#layout)
@@ -118,7 +122,6 @@ gets logged, rather than a reason to switch the guard off.
 | `dev-server-guard.cjs` | PreToolUse, PostToolUse | Denies dev servers piped through `head`/`tail` or backgrounded without an explicit opt-in; reminds that stopping a wrapper on Windows leaves the children alive. | `DEV_SERVER_BG_OK` |
 | `scope-lock.cjs` | PreToolUse, UserPromptSubmit | Confines Edit/Write to a directory for the session. Arm with `scope-lock <dir>` as a prompt. | `scope-unlock` |
 | `repeat-tool-guard.cjs` | PostToolUse | Counts identical consecutive calls and escalates a reminder at 3, 5 and 8. Advisory, never blocks. | `REPEAT_GUARD_OFF=1` |
-| `no-auto-compact.cjs` | PreCompact | Turns "never auto-compact, ask at 80%" from prose into a hook. | none |
 | `context-nudge.py` | UserPromptSubmit | One nudge per high-context crossing to consider `/compact` or `/clear`. | none |
 | `opus-handoff-inject.cjs` | SessionStart, UserPromptSubmit | Detects an Opus session and injects the lower-cost operating notes once. | none |
 | `creds-resolve.cjs` | SessionStart | Fills `.env` from a local vault when `.env.example` exists, so the agent never asks for a key it already has. | none |

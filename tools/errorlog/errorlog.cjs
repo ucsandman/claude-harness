@@ -166,7 +166,7 @@ function harvest(days) {
     // these headings, so a plain grep -l over the file is a FALSE POSITIVE
     // (measured 2026-08-16: 227 "hits" that were all the instruction text).
     // Only an assistant-authored text block counts, checked below.
-    if (!raw.includes('DEVIATIONS FROM PLAN') && !raw.includes('ASSUMPTIONS')) continue;
+    if (!raw.includes('DEVIATIONS') && !raw.includes('ASSUMPTIONS')) continue;
 
     for (const line of raw.split('\n')) {
       if (!line.trim()) continue;
@@ -179,7 +179,7 @@ function harvest(days) {
       for (const b of o.message.content) {
         if (b.type !== 'text' || typeof b.text !== 'string') continue;
 
-        const dev = blockAfter(b.text, 'DEVIATIONS FROM PLAN');
+        const dev = blockAfter(b.text, 'DEVIATIONS(?: FROM PLAN)?');
         if (dev) {
           for (const text of bullets(dev)) {
             found.push({ id: idOf(text), day, ts: o.timestamp, kind: 'deviation', bucket: bucketOf(text), text, repo: repoOf(file) });

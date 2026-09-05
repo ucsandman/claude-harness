@@ -95,10 +95,12 @@ function main() {
       return; // no lock for this session
     }
     const ti = data.tool_input || {};
-    let target = ti.file_path || ti.notebook_path;
+    const targets = data.tool_name === 'apply_patch'
+      ? [...String(ti.command || '').matchAll(/^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$/gm)].map(m => m[1].trim())
+      : [ti.file_path || ti.notebook_path].filter(Boolean);
+    const target = targets.map(p => path.resolve(data.cwd || lock.cwd || process.cwd(), p))
+      .find(p => !isInside(p, lock.root));
     if (!target) return;
-    target = path.resolve(data.cwd || lock.cwd || process.cwd(), target); // relative paths resolve vs the session cwd, not the hook's
-    if (isInside(target, lock.root)) return;
     process.stdout.write(JSON.stringify({
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',

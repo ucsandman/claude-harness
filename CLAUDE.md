@@ -10,14 +10,14 @@ GENERATED FILE. Source of truth is agnostic-ai/core/. Loaded via an @import line
 
 # 🛡️ Agnostic AI Universal Harness — ACTIVE
 
-> **Harness Status:** `[AGNOSTIC-HARNESS v1.5.0: ACTIVE & GOVERNED]`
-> **Single Source of Truth:** Agnostic AI Engine (18-Target Parity Engine)
+> **Harness Status:** `[AGNOSTIC-HARNESS v1.5.2: ACTIVE & GOVERNED]`
+> **Single Source of Truth:** Agnostic AI Engine (16 configured sync targets)
 > **Governance Provider:** DashClaw Governed Autonomy / Local Fallback
 
 **Operator Visibility Requirement:**
 At the start of any new session or when first replying to the operator, prepend the session badge:
-`🛡️ [Agnostic Harness v1.5.0 | DashClaw Governed]`
-This proves that the active session is correctly initialized and bound to the Agnostic AI Harness.
+`🛡️ [Agnostic Harness v1.5.2 | DashClaw Governed]`
+This identifies the configured harness. Hook probes and runtime checks establish whether it is working.
 
 ---
 
@@ -25,7 +25,7 @@ This proves that the active session is correctly initialized and bound to the Ag
 
 Rationale and incident history: core/rules/global-rules-reference.md (not loaded into sessions).
 
-Clean, correct, shippable, minimal changes that run locally and create no cleanup work. Project rules and my explicit instructions override this file. Caution over speed; judgment on trivial tasks.
+Clean, correct, shippable, minimal changes that run locally and create no cleanup work. Every added mechanism should reduce future supervision enough to justify its ongoing cost. Project rules and my explicit instructions override this file. Caution over speed; judgment on trivial tasks.
 
 ## Non-Negotiables
 
@@ -81,6 +81,7 @@ Sideways mid-task → stop and re-plan, don't push through. Algorithmic/data wor
 - **Exhaust your own options before handing the operator anything.** Prove each blocker: (1) `creds resolve`, then `creds mint <provider|KEY>` for the rest, then search by NAME for what creds misses (ls, grep -c, derive via a script that never prints the secret) — never assume absence; (2) probe keyless/public alternatives with a real request before naming a paid or account-gated one; (3) try the automated path (CLI, MCP, script, another agent). A blocker surviving all three goes over as `creds mint <provider>` plus numbered copy-paste steps from research you actually ran, never memory. New provider solved by hand → RECIPES entry in `C:\Projects\creds\creds.mjs`.
 - Ask only when it matters: auth, billing, production infra, migrations; a new external service or dependency; multiple plausible approaches where the wrong one wastes real time. Batch questions into one message.
 - Verify before claiming done: READ the output. Evidence, not assertions.
+- Allow automatic context compaction. Preserve the active objective, decisions, constraints, verification evidence and next steps in the handoff; do not block compaction or require operator approval.
 - Verify retrieved content, never your summary of it — re-fetch and fact-check drafts against source.
 - Keep a DEVIATIONS log: one line per place the code forced a change from plan or assumptions.
 - One feature per change; no refactors unless required to deliver it.

@@ -42,19 +42,24 @@ const readJSON = (p) => {
 // The guards that make up the shared safety layer, and which harness can host each.
 const GUARDS = [
   ['secret-guard', 'Blocks writing/committing secrets and staging .env'],
+  ['rm-guard', 'Denies recursive deletes outside scratch/build dirs'],
   ['process-kill-guard', 'Blocks kill-by-name; forces the PID form'],
   ['dev-server-guard', 'Stops orphaned dev servers and wrong-tree kills'],
   ['scope-lock', 'Blocks edits outside a locked directory'],
-  ['bg-test-guard', 'Blocks backgrounding a finite test/build run'],
+  ['slow-command-guard', 'Blocks recursive searches rooted at C:\\Projects or home'],
+  ['git-tree-guard', 'Denies git commands that rewrite a shared working tree'],
+  ['batch-guard', 'Denies the 4th consecutive one-at-a-time probe'],
+  ['declick-nudge', 'Names the declick adapter for an MCP/WebFetch call'],
   ['repeat-tool-guard', 'Counts identical tool calls, nudges at 3/5/8'],
-  ['no-auto-compact', 'Enforces the never-auto-compact rule'],
   ['correction-tracker', 'Counts repeat corrections, drafts the rule'],
+  ['creds-resolve', 'Fills .env from the creds vault at session start'],
+  ['codex-memory-inject', 'Injects the shared memory store at session start (Codex)'],
+  ['codex-rewrite', 'rtk + repowise command rewriting (Codex adapter)'],
   ['rtk', 'Compresses shell output 60-90%'],
   ['agent-model-guard', 'Caps Fable spawns; requires explicit model:'],
   ['opus-handoff-inject', 'Injects the Opus routing pack at session start'],
   ['guard-canary', 'Proves the guards still fire (rule L1)'],
   ['session-count', 'Warns about parallel session cost'],
-  ['manifest-gate', 'Commit-time: blocks undeclared file changes'],
 ];
 
 /** Everything a harness knows about itself, read from disk. */
@@ -65,7 +70,7 @@ function inspectHarness(h) {
     // A guard counts as wired only if its script name appears in a config file
     // AND the script it points at exists on disk.
     if (!configText.includes(name)) continue;
-    if (name === 'rtk' || name === 'manifest-gate') {
+    if (name === 'rtk') {
       wired.add(name);
       continue;
     }
@@ -73,23 +78,10 @@ function inspectHarness(h) {
       path.join(HOME, '.claude', 'hooks', `${name}.cjs`),
       path.join(HOME, '.claude', 'hooks', `${name}.ps1`),
       path.join(HOME, '.claude', 'hooks', `${name}.py`),
+      path.join(HOME, '.claude', 'hooks', 'adapters', `${name}.cjs`),
     ];
     if (candidates.some((c) => fs.existsSync(c))) wired.add(name);
   }
-
-  // manifest-gate + the secret scan are git-level, so they cover every harness
-  // on this machine regardless of the agent's own config.
-  let gitShared = false;
-  try {
-    const hp = execFileSync('git', ['config', '--global', 'core.hooksPath'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
-    gitShared = /\.claude[/\\]git-hooks/.test(hp) && fs.existsSync(path.join(hp, 'pre-commit'));
-  } catch {
-    gitShared = false;
-  }
-  if (gitShared) wired.add('manifest-gate');
 
   // Rules file
   const rulesRaw = read(h.rules);
@@ -142,7 +134,13 @@ const HARNESSES = [
   {
     id: 'codex',
     name: 'Codex CLI',
-    model: 'gpt-5.5 / xhigh',
+    // Read from config.toml so the page never asserts a model from memory.
+    model: (() => {
+      const t = read(path.join(HOME, '.codex', 'config.toml')) || '';
+      const m = t.match(/^model\s*=\s*"([^"]+)"/m);
+      const e = t.match(/^model_reasoning_effort\s*=\s*"([^"]+)"/m);
+      return `${m ? m[1] : '?'} / ${e ? e[1] : '?'}`;
+    })(),
     rules: path.join(HOME, '.codex', 'AGENTS.md'),
     skillsDir: path.join(HOME, '.codex', 'skills'),
     configFiles: [path.join(HOME, '.codex', 'hooks.json'), path.join(HOME, '.codex', 'config.toml')],
@@ -181,16 +179,26 @@ const NA = {
     'opus-handoff-inject': 'Opus-specific',
     'guard-canary': 'reads Claude’s own guard state',
     'session-count': 'counts Claude transcripts',
+    rtk: 'runs inside the codex-rewrite adapter',
   },
   agy: {
-    'bg-test-guard': 'no run_in_background flag to gate',
-    'no-auto-compact': 'no PreCompact event exists',
     'agent-model-guard': 'no Fable/Opus routing to cap',
     'opus-handoff-inject': 'Opus-specific',
     'guard-canary': 'reads Claude’s own guard state',
     'session-count': 'counts Claude transcripts',
+    'rm-guard': 'not yet chained into the agy adapter',
+    'slow-command-guard': 'not yet chained into the agy adapter',
+    'git-tree-guard': 'not yet chained into the agy adapter',
+    'batch-guard': 'not yet chained into the agy adapter',
+    'declick-nudge': 'not yet chained into the agy adapter',
+    'creds-resolve': 'not yet chained into the agy adapter',
+    'codex-memory-inject': 'Codex-only adapter',
+    'codex-rewrite': 'Codex-only adapter',
   },
-  claude: {},
+  claude: {
+    'codex-memory-inject': 'Codex-only adapter (Claude has native memory)',
+    'codex-rewrite': 'Codex-only adapter (Claude runs rtk and repowise directly)',
+  },
 };
 
 const data = HARNESSES.map(inspectHarness);

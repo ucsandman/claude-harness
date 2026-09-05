@@ -1,0 +1,57 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:\\Users\\sandm\\.codex\\hooks\\dashclaw\\dashclaw_pretool.py --agent-id codex",
+            "timeout": 3600
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|apply_patch|mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/Projects/agnostic-ai/engine/hooks/dashclaw-guard.cjs\"",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:\\Users\\sandm\\.codex\\hooks\\dashclaw\\dashclaw_posttool.py --agent-id codex"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:\\Users\\sandm\\.codex\\hooks\\dashclaw\\dashclaw_stop.py --agent-id codex"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:\\Users\\sandm\\.codex\\hooks\\dashclaw\\enforcement_liveness_probe.py --source session-start --runtime codex --settings C:\\Users\\sandm\\.codex\\config.toml"
+          }
+        ]
+      }
+    ]
+  }
+}

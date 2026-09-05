@@ -65,11 +65,10 @@ two things about who the agent is is a night that has stopped measuring.
 
 ## Reading the practice's own health
 
-The promotion ratio is the metric, and it runs opposite to intuition. A run that
-promotes one thing and refuses three is working. A run that promotes three or
-four has stopped measuring and started agreeing with itself. **The refusals are
-the product**, so record what was refused and why, every time — a refusal with
-its reason written down is worth more than the promotion it withheld.
+Judge a lesson by a later decision it improves: fewer repeated mistakes, less
+operator correction, or an unnecessary step removed. Cite the later case or mark
+the lesson untested. Promotion and refusal counts describe process, not value.
+Workbench output is optional. Repeating one incident is not independent evidence.
 
 - Two consecutive runs promoting nothing: healthy. Do not go looking.
 - Any run promoting more than one thing: re-read the gates before the next
@@ -91,8 +90,10 @@ its reason written down is worth more than the promotion it withheld.
 
 ## SOUL.md write rails
 
-The meditation may edit SOUL.md autonomously. These rails are what make that
-safe:
+These rails apply only when SOUL.md is a hand-maintained source. When rules or
+traits are generated, propose changes against their canonical source in the
+existing candidate ledger. Do not edit generated output or call a proposal
+installed before its source change and runtime sync are verified.
 
 1. `git status --porcelain SOUL.md` must be empty before any edit. Dirty means
    the human is mid-change — defer and say so in the digest.

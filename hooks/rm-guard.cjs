@@ -82,6 +82,16 @@ function logHit(kind, cmd) {
 if (require.main === module) {
   let input;
   try { input = JSON.parse(fs.readFileSync(0, 'utf8')); } catch { process.exit(0); }
+  if (input.tool_name === 'apply_patch') {
+    const patch = String((input.tool_input || {}).command || '');
+    const deleted = [...patch.matchAll(/^\*\*\* Delete File: (.+)$/gm)].map(m => m[1].trim());
+    const outside = deleted.filter(p => !disposable(path.resolve(input.cwd || process.cwd(), p)));
+    if (outside.length && !OK.test(patch)) {
+      logHit('deny-patch', outside.join(' '));
+      deny('[rm-guard] Patch deletes non-disposable files: ' + outside.join(', ') + '. Obtain explicit operator confirmation before deletion; use the documented RM_OK marker after confirmation.');
+    }
+    process.exit(0);
+  }
   if (!SHELL_TOOLS.has(input.tool_name || '')) process.exit(0);
   const cmd = String((input.tool_input || {}).command || '');
   if (!cmd.trim()) process.exit(0);

@@ -107,16 +107,14 @@ function scanForSecret(text) {
   if (typeof text !== 'string' || text.length === 0) return null;
 
   for (const { type, re } of SECRET_PATTERNS) {
-    const m = re.exec(text);
-    if (m) {
+    for (const m of text.matchAll(new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g'))) {
       const line = lineAt(text, m.index);
       if (!lineHasPlaceholder(line)) return type;
     }
   }
 
   // Generic assignment rule — scan line by line so placeholder guard is local.
-  const g = GENERIC_RE.exec(text);
-  if (g) {
+  for (const g of text.matchAll(new RegExp(GENERIC_RE.source, GENERIC_RE.flags + 'g'))) {
     const line = lineAt(text, g.index);
     const value = g[2];
     if (!lineHasPlaceholder(line) && looksHighEntropy(value)) {
@@ -216,6 +214,28 @@ function main() {
       }
       if (typeof input.new_string === 'string') texts.push(input.new_string);
       break;
+    // Codex edits files through apply_patch: tool_input.command is the whole
+    // patch text (`*** Add File: path` / `*** Update File: path` headers, then
+    // `+` lines). Without this case Codex's writes hit `default: exit(0)` and
+    // were never scanned (2026-09-05 parity audit). The env-file allowance
+    // below cannot apply per file here (one patch may touch several), so a
+    // patch that only touches a real .env file is allowed and anything else is
+    // scanned line by line.
+    case 'apply_patch': {
+      const patch = String(input.command || '');
+      const files = [];
+      for (const m of patch.matchAll(/^\*\*\* (?:Add File|Update File|Move to): (.+)$/gm)) files.push(m[1].trim());
+      if (files.length && files.every((f) => isRealEnvFile(f))) process.exit(0);
+      filePath = files.length === 1 ? files[0] : '';
+      texts.push(
+        patch
+          .split('\n')
+          .filter((l) => l.startsWith('+') && !l.startsWith('+++'))
+          .map((l) => l.slice(1))
+          .join('\n')
+      );
+      break;
+    }
     // PowerShell is a first-class tool on this machine and is in the matcher
     // (Write|Edit|MultiEdit|Bash|PowerShell). Without this case it fell to
     // `default: exit(0)` and every scan below was a no-op on half the surface.

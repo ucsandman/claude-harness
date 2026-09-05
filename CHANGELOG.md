@@ -3,6 +3,15 @@
 Syncs from the private harness to this mirror. Dates are sync dates; the
 underlying changes usually landed over the preceding days.
 
+## 2026-09-05 (eleventh sync)
+
+- Allow automatic context compaction, including sessions that cached the old hook.
+- Make nightly artifacts optional and judge learning by later decisions.
+- Generate Codex rules, hooks, agents and prompts from shared sources.
+- Fix Codex approval output, patch scope and deletion checks, and credential scanning.
+- Reject invalid sync sources, unsafe generated paths and repository-local rewrite executables.
+- Accept both deviation heading formats in the error collector.
+
 ## 2026-09-05 (tenth sync)
 
 - agents/{haiku-scout,sonnet-implementer,opus-owner,advisor,security-reviewer}.md

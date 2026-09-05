@@ -1,4 +1,15 @@
 {
+  "spinnerVerbs": {
+    "mode": "replace",
+    "verbs": [
+      "ProWritingAid — Advanced grammar and style checking…"
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "node \"C:\\\\Users\\\\sandm\\\\.kickbacks\\\\vibe-ads-statusline.mjs\"",
+    "padding": 0
+  },
   "env": {
     "DASHCLAW_BEHAVIOR_SAMPLES_ENABLED": "1",
     "DASHCLAW_BEHAVIOR_SAMPLES_DIR": "C:/Users/sandm/.dashclaw/behavior-samples",
@@ -412,19 +423,6 @@
         ]
       }
     ],
-    "PreCompact": [
-      {
-        "matcher": "auto",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"C:/Users/sandm/.claude/hooks/no-auto-compact.cjs\"",
-            "timeout": 5,
-            "statusMessage": "Checking auto-compact policy..."
-          }
-        ]
-      }
-    ],
     "SubagentStart": [
       {
         "hooks": [
@@ -447,11 +445,6 @@
         ]
       }
     ]
-  },
-  "statusLine": {
-    "type": "command",
-    "command": "node \"C:\\\\Users\\\\sandm\\\\.kickbacks\\\\vibe-ads-statusline.mjs\"",
-    "padding": 0
   },
   "enabledPlugins": {
     "context7@claude-plugins-official": true,
@@ -594,12 +587,6 @@
   },
   "outputStyle": "Concise",
   "feedbackDrafts": "off",
-  "spinnerVerbs": {
-    "mode": "replace",
-    "verbs": [
-      "Coursera — Build job-ready skills with online courses…"
-    ]
-  },
   "effortLevel": "xhigh",
   "modelSettings": {
     "claude-fable-5": {

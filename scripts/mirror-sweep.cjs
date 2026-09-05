@@ -36,6 +36,9 @@ for (const f of files) {
     for (const [name, re] of patterns) {
       const m = line.match(re);
       if (!m) continue;
+      // Hook identity regression checksum, not a credential. Other patterns still scan this line.
+      if (name === 'long hex/base64 blob' && f.replace(/\\/g, '/') === 'tools/harness-sync/sync.cjs' &&
+          /^\s*return known === 'sha256:[a-f0-9]{64}';\s*$/.test(line)) continue;
       if (allow.some(a => a.test(m[0]) || a.test(line))) continue;
       hits++;
       perPattern[name] = (perPattern[name] || 0) + 1;

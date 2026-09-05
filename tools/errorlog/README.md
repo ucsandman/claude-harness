@@ -48,6 +48,9 @@ deviations across 8 days**, reading like *"I expected the vault to define
 STRIPE_LIVE_SECRET_KEY. It did not."* That is a prediction error log. It was
 evaporating into transcript files nobody reads.
 
+Both `DEVIATIONS` and `DEVIATIONS FROM PLAN` headings are accepted, including bold
+headings. Check coverage before interpreting zero stored records as a clean run.
+
 This harvests it out of `~/.claude/projects/**/*.jsonl`, merges the
 `corrections.jsonl` entries where Wes corrected me, and renders the one thing
 a pile of mistakes is actually for: what I get wrong **repeatedly**.
