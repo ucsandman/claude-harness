@@ -57,7 +57,7 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "claude-fable-5-1[1m]",
+  "model": "opus[1m]",
   "fallbackModel": [
     "sonnet",
     "haiku"
@@ -252,7 +252,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"C:/Projects/DashClaw/hooks/dashclaw_posttool.py\" --agent-id claude-code"
+            "command": "python \"C:/Projects/DashClaw/hooks/dashclaw_posttool.py\" --agent-id claude-code",
+            "async": true
           }
         ]
       },
@@ -295,16 +296,19 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python \"C:/Projects/DashClaw/hooks/dashclaw_stop.py\" --agent-id claude-code"
+            "command": "python \"C:/Projects/DashClaw/hooks/dashclaw_stop.py\" --agent-id claude-code",
+            "async": true
           },
           {
             "type": "command",
-            "command": "python \"C:/Users/sandm/.claude/hooks/sync-main-checkout.py\""
+            "command": "python \"C:/Users/sandm/.claude/hooks/sync-main-checkout.py\"",
+            "async": true
           },
           {
             "type": "command",
             "command": "python \"C:/Users/sandm/.claude/hooks/skill-telemetry.py\"",
-            "timeout": 5
+            "timeout": 5,
+            "async": true
           },
           {
             "type": "command",
@@ -600,7 +604,7 @@
   "spinnerVerbs": {
     "mode": "replace",
     "verbs": [
-      "Liner Actions — Join the waitlist, get a free year"
+      "Liner Actions — One MCP instead of twenty"
     ]
   },
   "effortLevel": "xhigh",

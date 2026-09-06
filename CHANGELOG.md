@@ -3,6 +3,16 @@
 Syncs from the private harness to this mirror. Dates are sync dates; the
 underlying changes usually landed over the preceding days.
 
+## 2026-09-06 (eighteenth sync)
+
+- Four non-blocking hooks run `"async": true` in `settings.json` (the DashClaw PostToolUse
+  and Stop hooks, `sync-main-checkout`, `skill-telemetry`): each was read first and exits 0
+  only, prints nothing and emits no decision. A hook that can deny or inject stays synchronous.
+- `docs/hook-latency.md` gains the DashClaw result: the governed hook now makes one HTTPS
+  request per tool call instead of two (DashClaw 5.35.0 folds the execution claim into the
+  guard call, 5.35.1 reuses the same-request verdict), claim stage 95-122 ms to 14-18 ms,
+  hook wall median 530 to 435 ms against production.
+
 ## 2026-09-06 (seventeenth sync)
 
 - Hook latency pass, measured per hook with a real payload: `hooks/correction-tracker.cjs`
