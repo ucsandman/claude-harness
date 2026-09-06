@@ -3,6 +3,19 @@
 Syncs from the private harness to this mirror. Dates are sync dates; the
 underlying changes usually landed over the preceding days.
 
+## 2026-09-06 (twenty-first sync)
+
+- `scripts/mirror-sync.cjs` copies **tracked** files only. It used to include untracked-
+  not-ignored files under the synced directories, and on 2026-09-06 that carried another
+  session's uncommitted workflow, with two dev database URLs baked into an agent prompt,
+  into this mirror's working tree before the sweep ran. The sweep refused the run, but the
+  file was already sitting there for the next `git add -A`. An untracked file has been
+  reviewed by nobody; committing to the private harness is the review step. What gets
+  skipped is now named in the output.
+- A failed sweep rolls the mirror back: every hit path is restored from HEAD, or removed
+  when HEAD lacks it, before the run exits 1. Proven by planting a fake DSN in the tree and
+  watching the run remove it.
+
 ## 2026-09-06 (twentieth sync)
 
 - The env-dump denial in `hooks/secret-guard.cjs` closes the shapes a review found it
