@@ -182,22 +182,42 @@ function gitAddsRealEnvFile(command) {
 //   /usr/bin/env node  — interpreter lookup
 //   printenv PATH      — one named variable
 //   env | grep -c X    — a count, never a value
+//
+// A dumping command must stand on its own: at the start of a line, after a
+// separator, inside `$(...)` / backticks, or behind a wrapper (sudo, exec,
+// time...). `echo env` and `grep env file` are words, not dumps. What follows
+// it must end the command or hand the output somewhere: end of line, a pipe,
+// a separator, a comment, or a redirect (`env > out.txt` is still a dump).
+const LEAD = String.raw`(?:^|[;&|(\x60]\s*|\b(?:sudo|exec|command|time|nohup|xargs)\s+)`;
+const TAIL = String.raw`\s*(?:$|[|;&#>)\x60])`;
 const ENV_DUMP_PATTERNS = [
-  [/(?:^|[;&|]\s*)env\s*(?:$|[|;&#])/, 'env'],
-  [/(?:^|[;&|]\s*)printenv\s*(?:$|[|;&#])/, 'printenv'],
-  [/(?:^|[;&|]\s*)export\s+-p\b/, 'export -p'],
-  [/(?:^|[;&|]\s*)declare\s+-x\b/, 'declare -x'],
+  [new RegExp(LEAD + 'env' + TAIL, 'm'), 'env'],
+  [new RegExp(LEAD + 'printenv' + TAIL, 'm'), 'printenv'],
+  // Bare `set` prints every shell variable (cmd.exe and PowerShell: every env
+  // var). `set -e`, `set -o pipefail` and friends carry arguments and pass.
+  [new RegExp(LEAD + 'set' + TAIL, 'm'), 'set'],
+  [new RegExp(LEAD + String.raw`export\s+-p\b`, 'm'), 'export -p'],
+  [new RegExp(LEAD + String.raw`declare\s+-x` + TAIL, 'm'), 'declare -x'],
   [/\/proc\/self\/environ/, '/proc/self/environ'],
-  [/\b(?:Get-ChildItem|Get-Item|gci|ls|dir)\s+(?:-\w+\s+)*env:/i, 'the PowerShell env: drive'],
+  // The PowerShell env: drive, enumerated. `gci env:PATH` names one variable
+  // and passes; `gci env:`, `ls env:*`, `dir env: | ft` enumerate.
+  [/\b(?:Get-ChildItem|Get-Item|gci|ls|dir)\s+(?:-\w+\s+)*env:\s*(?:\*\s*)?(?:$|[|;&#>)])/im, 'the PowerShell env: drive'],
+  [/GetEnvironmentVariables\s*\(/i, '[Environment]::GetEnvironmentVariables()'],
+  // Language-level dumps. `os.environ["X"]` / `.get("X")` and `process.env.X`
+  // name one variable; the bare object printed, spread, or iterated is a dump.
+  [/\bos\.environ(?![\.\[\w])/, 'os.environ'],
+  [/\bprocess\.env(?![\.\[\w])/, 'process.env'],
 ];
 
-// A pipeline that provably cannot print a value: a count or a line tally.
-const VALUE_SAFE_SINK = /\|\s*(?:grep\s+(?:-\w+\s+)*-\w*c\w*\b|wc\b)/;
+// A pipeline that provably cannot print a value: a count or a line tally —
+// and nothing on the way that could copy the values elsewhere (tee, redirect).
+const VALUE_SAFE_SINK = /\|\s*(?:grep\s+(?:-\w+\s+)*(?:-\w*c\w*|--count)\b|wc\b)/;
+const VALUE_LEAK_STAGE = /\btee\b|>/;
 
 function dumpsEnvironment(command) {
   const cmd = String(command || '');
   if (!cmd) return '';
-  if (VALUE_SAFE_SINK.test(cmd)) return '';
+  if (VALUE_SAFE_SINK.test(cmd) && !VALUE_LEAK_STAGE.test(cmd)) return '';
   for (const [re, label] of ENV_DUMP_PATTERNS) {
     if (re.test(cmd)) return label;
   }

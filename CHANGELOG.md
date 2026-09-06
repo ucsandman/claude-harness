@@ -3,6 +3,17 @@
 Syncs from the private harness to this mirror. Dates are sync dates; the
 underlying changes usually landed over the preceding days.
 
+## 2026-09-06 (twentieth sync)
+
+- The env-dump denial in `hooks/secret-guard.cjs` closes the shapes a review found it
+  letting through: `env > file`, `$(env)` and backticks, `sudo env`, bare `set`,
+  `env | tee x | wc -l` (tee copied values before the count sink), `env` on its own
+  line inside a multi-line command, and the language-level dumps `print(os.environ)`,
+  `console.log(process.env)`, `[Environment]::GetEnvironmentVariables()`. One named
+  variable (`printenv X`, `gci env:PATH`, `process.env.X`) still passes. The cases live
+  in `hooks/tests/secret-guard-env-dump.test.cjs` (46) — as a file, because a command
+  line that merely contains `$(env)` as a test string is itself denied, which is right.
+
 ## 2026-09-06 (nineteenth sync)
 
 - Secret guards gain the channel they were missing: tool RESULTS. The map had
