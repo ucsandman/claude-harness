@@ -3,6 +3,10 @@
 Syncs from the private harness to this mirror. Dates are sync dates; the
 underlying changes usually landed over the preceding days.
 
+## 2026-09-06 (sixteenth sync)
+
+- `hooks/fable-delegate-guard.cjs` no longer denies anything. It briefs the session once with the measured token economics and logs large edits and code-writing shell commands for `--report`. Its own log (1,046 events) showed 714 `# FABLE_OK` overrides, 266 shell denials that included `npm test`, a heredoc commit message and a read-only grep, and edit denials retried five to seven times on the same file: a model treats a PreToolUse deny like a transient error, and a cap firing at edit 21 of a coherent change set leaves a half-edited file. The per-prompt edit budget, the shell code-writing denial, the override marker and the "hands-on" prompt toggle are gone. A PreToolUse hook has no `additionalContext`, so a nudge that must reach the model belongs in a SessionStart or UserPromptSubmit briefing, never a mid-task block. `CLAUDE.md` carries the rewritten rule with the evidence trail.
+
 ## 2026-09-06 (fifteenth sync)
 
 Two mechanisms ported from the postmortem archive of an abandoned agent harness (DITlieD/ELAI-archive, rules R6/R7/R8). The rest of that archive was left where it was; its own postmortem names subsystem-per-problem accretion as what killed it.

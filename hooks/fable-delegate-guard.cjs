@@ -1,15 +1,27 @@
 #!/usr/bin/env node
 /**
- * engine/hooks/fable-delegate-guard.cjs — delegate-first enforcement for a
- * Fable main loop (Claude Code PreToolUse + UserPromptSubmit + SessionStart).
+ * engine/hooks/fable-delegate-guard.cjs — delegation briefing and hand-work log
+ * for a Fable main loop (Claude Code PreToolUse + UserPromptSubmit + SessionStart).
  *
  * Fable is the expensive model. When it runs the main loop it should spend its
- * tokens on decisions, review and synthesis, and hand the hands-on work to
- * subagents (Agent tool with an explicit model, or a Workflow). This hook makes
- * that mechanical instead of aspirational: while the session model is Fable,
- * writing code through the shell is denied, and direct edits outside ~/.claude
- * and the session scratchpad are a budget rather than a wall — up to 3 small
- * edits per prompt for fix-ups, anything bigger goes to a subagent.
+ * tokens on decisions, review and synthesis, and hand large hands-on work to
+ * subagents (Agent tool with an explicit model, or a Workflow). This hook
+ * briefs the session once with the measured token economics and logs the
+ * hand-work the loop does anyway (large edits, code-writing shell commands),
+ * so `--report` shows how much of it there is. It denies nothing.
+ *
+ * It used to enforce: a per-prompt edit budget and a shell code-writing denial.
+ * Retired 2026-09-06 after reading its own log: 1,046 events, 714 of them
+ * `# FABLE_OK` overrides, 266 shell denials (among them `npm test`, a heredoc
+ * commit message and a read-only grep), 47 edit denials that arrived in runs
+ * of five to seven on the same file because the model treats a deny like a
+ * transient error and retries the next queued edit. The 2026-09-03 declick
+ * launch had already shown the other side: three delegated fix passes cost
+ * 3.7M tokens and two hours on defects a 40-minute hand pass closed, and the
+ * budget fought that hand pass. A cap that fires at edit 21 of a coherent
+ * change set leaves a half-edited file, which neither finishing nor never
+ * starting would have done. The briefing was the part that informed the
+ * routing decision; the block only produced probing.
  *
  * Model detection (no PreToolUse payload field carries the model — measured
  * 2026-09-02): payload.model (SessionStart only) -> newest assistant
@@ -20,13 +32,10 @@
  * while `transcript_path` still points at the MAIN transcript, so `agent_id` is
  * the only sound signal — never infer subagent-ness from the transcript path.
  *
- * Known escape hatch, deliberately left open: running a script by path
- * (`node do-it.js`, `python fix.py`) is allowed, because the alternative is
- * denying every test and lint invocation. The guard raises the cost of casual
- * hands-on work in the main loop; it is not a sandbox.
+ * `isMutatingShell` is the shared shell classifier; the Codex twin
+ * (~/.claude/hooks/adapters/codex-delegate-guard.cjs) requires it from here.
  *
- * Override one shell command: append `# FABLE_OK: <why>` (logged).
- * Disable for a session: FABLE_DELEGATE_GUARD=off.
+ * Silence the briefing for a session: FABLE_DELEGATE_GUARD=off.
  * Report: node fable-delegate-guard.cjs --report
  */
 'use strict';
@@ -37,23 +46,17 @@ const path = require('path');
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 const SHELL_TOOLS = new Set(['Bash', 'PowerShell']);
+// Old override marker. No longer needed; still stripped so an annotated command classifies the same.
 const MARKER = /#\s*FABLE_OK:\s*([^\n]*)/i;
 const MAX_MARK_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const TAIL_BYTES = 256 * 1024;
 
-const DENY_REASON = '[fable-delegate-guard] Delegate-first: this main loop runs on Fable. Hand this work to a subagent: Agent tool with an explicit model (sonnet for implementation, opus for large or risky tasks, haiku for mechanical edits and lookups) or a Workflow; Fable keeps decisions, review, and synthesis. Allowed here: reads, tests and lint, writes under ~/.claude and the session scratchpad. Shell override for a genuinely trivial command: append `# FABLE_OK: <why>` (logged). Disable for one session: set FABLE_DELEGATE_GUARD=off.';
+// "Large" is what the retired budget called a non-small edit. It is a log
+// threshold now, so the report can separate fix-ups from typed features.
+const LARGE_EDIT_LINES = 160;
+const LARGE_WRITE_LINES = 200;
 
-// 2026-09-03 (declick launch): 8 edits per prompt made the main loop route a twelve-edit hand fix through
-// scratchpad patch scripts while three delegated passes had already cost 3.7M tokens and two hours. The
-// budget exists to stop a Fable loop from typing a feature; it must not stop it from finishing a bugfix.
-const EDIT_BUDGET = 20;
-const SMALL_EDIT_LINES = 160;
-const SMALL_WRITE_LINES = 200;
-// Wes says it once, in the prompt, and the guard steps aside for the rest of the session. "delegate again" restores it.
-const HANDS_ON = /\b(hands[- ]on|do (it|this|everything) yourself|fix (it|this|everything) yourself|line by line)\b/i;
-const HANDS_OFF = /\b(delegate again|delegate-first again|hands off)\b/i;
-
-const INJECTION = '[fable-delegate-guard] This session runs on Fable. Token economics (measured 2026-09-02): a subagent costs ~60k input tokens before its first tool call (harness prompt + skill/tool catalogs), then 2-4k per call. Anything under ~10 tool calls or ~80 lines of edits is CHEAPER done here than delegated; a one-line edit handed to Sonnet cost 77k. Delegate only large work (many files, a test suite, long tool output, or independent pieces that run in parallel) and name the model explicitly: opus large/risky, sonnet mid-size, haiku lookups. Enforced budget: 20 direct edits (<=160 lines) or writes (<=200 lines) per prompt; shell writes to ~/.claude and the scratchpad are free; larger code-writing through the shell is denied. When the operator says "hands-on" (or "do it yourself", "line by line") in a prompt, the guard steps aside for the rest of the session. Fable keeps decisions, final review, and synthesis.';
+const INJECTION = '[fable-delegate-guard] This session runs on Fable. Token economics (measured 2026-09-02): a subagent costs ~60k input tokens before its first tool call (harness prompt + skill/tool catalogs), then 2-4k per call. Anything under ~10 tool calls or ~80 lines of edits is CHEAPER done here than delegated; a one-line edit handed to Sonnet cost 77k, and on 2026-09-03 three delegated fix passes cost 3.7M tokens on defects a 40-minute hand pass closed. Delegate only large work (many files, a test suite, long tool output, or independent pieces that run in parallel) and name the model explicitly: opus large/risky, sonnet mid-size, haiku lookups. Nothing is enforced: edit directly when that is cheaper, and finish a change set you started rather than leaving a file half-edited. Large edits and code-writing shell commands are logged for `--report`. Fable keeps decisions, final review, and synthesis.';
 
 function injectionText() {
   return INJECTION;
@@ -181,9 +184,9 @@ function isMutatingShell(command, opts = {}) {
     if (!underAny(target, roots)) return true;
   }
 
-  // Mutations whose every named path lands in the scratchpad or tmp are free:
-  // a sed -i on a probe script or an inline node writer of a temp file is not
-  // hands-on code, and delegating it costs a ~60k-token subagent spawn.
+  // Mutations whose every named path lands in the scratchpad or tmp are not
+  // hands-on code: a sed -i on a probe script or an inline node writer of a
+  // temp file.
   const scratchOnly = onlyUnderRoots(cmd, roots, opts.cwd);
   if (MUTATING_WORDS.test(cmd) && !scratchOnly) return true;
   if (SED_INPLACE.test(cmd) && !scratchOnly) return true;
@@ -216,7 +219,7 @@ function onlyUnderRoots(cmd, roots, cwd) {
   });
 }
 
-// --- decision ----------------------------------------------------------------
+// --- classification (log only) ----------------------------------------------
 
 function logEvent(entry, opts = {}) {
   try {
@@ -240,63 +243,24 @@ function allowedEditPath(payload, opts, target) {
 
 const lines = (s) => String(s == null ? '' : s).split('\n').length;
 
-// A "small direct edit" is a fix-up Fable may do itself. Anything bigger is
-// real implementation work and belongs to a subagent.
 function isSmallEdit(tool, input) {
-  if (tool === 'Write') return lines(input.content) <= SMALL_WRITE_LINES;
-  if (tool === 'Edit') return lines(input.new_string) <= SMALL_EDIT_LINES;
-  if (tool === 'NotebookEdit') return lines(input.new_source) <= SMALL_EDIT_LINES;
+  if (tool === 'Write') return lines(input.content) <= LARGE_WRITE_LINES;
+  if (tool === 'Edit') return lines(input.new_string) <= LARGE_EDIT_LINES;
+  if (tool === 'NotebookEdit') return lines(input.new_source) <= LARGE_EDIT_LINES;
   if (tool === 'MultiEdit') {
     const edits = Array.isArray(input.edits) ? input.edits : [];
-    return edits.length > 0 && edits.length <= 3 && edits.every(e => lines(e && e.new_string) <= SMALL_EDIT_LINES);
+    return edits.length > 0 && edits.length <= 3 && edits.every(e => lines(e && e.new_string) <= LARGE_EDIT_LINES);
   }
   return false;
 }
 
-// Direct edits are budgeted per prompt, so one prompt cannot walk a whole
-// refactor through the main loop one small edit at a time.
-function editCounterFile(payload, opts) {
-  const sid = payload.session_id || 'no-session';
-  const name = payload.prompt_id ? `${sid}.${payload.prompt_id}.edits` : `${sid}.edits`;
-  return path.join(stateDirOf(opts), name);
-}
-function editsUsed(payload, opts) {
-  try {
-    const n = parseInt(fs.readFileSync(editCounterFile(payload, opts), 'utf8').trim(), 10);
-    return Number.isFinite(n) && n > 0 ? n : 0;
-  } catch (_) {
-    return 0;
-  }
-}
-function bumpEdits(payload, opts, used) {
-  try {
-    const file = editCounterFile(payload, opts);
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, String(used + 1), 'utf8');
-  } catch (_) {}
-}
-
-function handsOnFile(payload, opts) {
-  return path.join(stateDirOf(opts), `${payload.session_id || 'no-session'}.handson`);
-}
-function handsOn(payload, opts) {
-  try { return fs.existsSync(handsOnFile(payload, opts)); } catch (_) { return false; }
-}
-function setHandsOn(payload, opts, on) {
-  try {
-    const f = handsOnFile(payload, opts);
-    if (on) { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, new Date().toISOString(), 'utf8'); }
-    else if (fs.existsSync(f)) fs.unlinkSync(f);
-  } catch (_) {}
-}
-
+// Every verdict allows. `kind` says what the guard saw; large edits and
+// code-writing shell commands outside ~/.claude, the scratchpad and tmp are
+// logged so `--report` can show how much hand-work a Fable loop does.
 function decide(payload = {}, opts = {}) {
   const env = opts.env || process.env;
   if (String(env.FABLE_DELEGATE_GUARD || '').toLowerCase() === 'off') {
     return { action: 'allow', kind: 'disabled', reason: '', model: null };
-  }
-  if (payload.session_id && handsOn(payload, opts)) {
-    return { action: 'allow', kind: 'hands-on', reason: 'hands-on mode for this session', model: null };
   }
   if (payload.agent_id) {
     return { action: 'allow', kind: 'subagent', reason: '', model: null };
@@ -307,7 +271,7 @@ function decide(payload = {}, opts = {}) {
 
   const tool = payload.tool_name || '';
   const input = payload.tool_input || {};
-  const deny = (kind, detail, extra = '') => {
+  const note = (kind, detail) => {
     logEvent({
       ts: new Date().toISOString(),
       session_id: payload.session_id || null,
@@ -316,12 +280,7 @@ function decide(payload = {}, opts = {}) {
       detail: String(detail).slice(0, 160),
       ...(payload.agent_type ? { agent_type: payload.agent_type } : {})
     }, opts);
-    return {
-      action: 'deny',
-      kind,
-      model,
-      reason: `${DENY_REASON} Blocked: ${tool} ${String(detail).slice(0, 120)}.${extra}`
-    };
+    return { action: 'allow', kind, reason: '', model };
   };
 
   if (EDIT_TOOLS.has(tool)) {
@@ -329,13 +288,8 @@ function decide(payload = {}, opts = {}) {
     if (allowedEditPath(payload, opts, target)) {
       return { action: 'allow', kind: 'allowed-path', reason: '', model };
     }
-    const used = editsUsed(payload, opts);
-    if (used < EDIT_BUDGET && isSmallEdit(tool, input)) {
-      bumpEdits(payload, opts, used);
-      return { action: 'allow', kind: 'allowed-small', reason: `${used + 1} of ${EDIT_BUDGET}`, model };
-    }
-    return deny('deny-edit', target,
-      ` Small direct edits (<=${SMALL_EDIT_LINES} lines, ${EDIT_BUDGET} per prompt) are allowed; this prompt has used ${used} of ${EDIT_BUDGET}.`);
+    if (isSmallEdit(tool, input)) return { action: 'allow', kind: 'small-edit', reason: '', model };
+    return note('large-edit', target);
   }
 
   if (SHELL_TOOLS.has(tool)) {
@@ -343,19 +297,7 @@ function decide(payload = {}, opts = {}) {
     if (!isMutatingShell(command, { tmpdir: opts.tmpdir, scratchpad: payload.scratchpad_dir, cwd: payload.cwd })) {
       return { action: 'allow', kind: 'allowed-shell', reason: '', model };
     }
-    const marker = command.match(MARKER);
-    if (marker) {
-      logEvent({
-        ts: new Date().toISOString(),
-        session_id: payload.session_id || null,
-        tool_name: tool,
-        kind: 'override',
-        detail: command.slice(0, 160),
-        ...(payload.agent_type ? { agent_type: payload.agent_type } : {})
-      }, opts);
-      return { action: 'allow', kind: 'override', reason: (marker[1] || '').trim(), model };
-    }
-    return deny('deny-shell', command);
+    return note('shell-write', command);
   }
 
   return { action: 'allow', kind: 'allowed-path', reason: '', model };
@@ -383,15 +325,8 @@ function main(payload = {}, opts = {}) {
   const event = payload.hook_event_name || (payload.tool_name ? 'PreToolUse' : '');
 
   if (event === 'PreToolUse') {
-    const verdict = decide(payload, opts);
-    if (verdict.action !== 'deny') return '';
-    return JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        permissionDecision: 'deny',
-        permissionDecisionReason: verdict.reason
-      }
-    });
+    decide(payload, opts); // log only; PreToolUse has no model-visible channel short of a deny
+    return '';
   }
 
   if (event !== 'UserPromptSubmit' && event !== 'SessionStart') return '';
@@ -399,19 +334,6 @@ function main(payload = {}, opts = {}) {
   const env = opts.env || process.env;
   if (String(env.FABLE_DELEGATE_GUARD || '').toLowerCase() === 'off') return '';
   if (!isFable(sessionModel(payload, opts))) return '';
-
-  // The operator's own words are the override. One "hands-on" in a prompt suspends the guard for the session.
-  const prompt = String(payload.prompt || '');
-  if (event === 'UserPromptSubmit' && HANDS_OFF.test(prompt) && handsOn(payload, opts)) {
-    setHandsOn(payload, opts, false);
-    logEvent({ ts: new Date().toISOString(), session_id: payload.session_id, kind: 'hands-off', detail: prompt.slice(0, 120) }, opts);
-    return JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: '[fable-delegate-guard] Delegate-first is back on for this session.' } });
-  }
-  if (event === 'UserPromptSubmit' && HANDS_ON.test(prompt)) {
-    setHandsOn(payload, opts, true);
-    logEvent({ ts: new Date().toISOString(), session_id: payload.session_id, kind: 'hands-on', detail: prompt.slice(0, 120) }, opts);
-    return JSON.stringify({ hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: '[fable-delegate-guard] Hands-on mode: the operator asked for direct work, so the delegate-first budget and the shell code-writing rule are suspended for the rest of this session. Edit directly. Say "delegate again" to restore the guard.' } });
-  }
 
   const text = injectOnce(payload, opts);
   if (!text) return '';
@@ -430,13 +352,14 @@ function report(opts = {}) {
   for (const line of lines) {
     let e;
     try { e = JSON.parse(line); } catch (_) { continue; }
-    const day = String(e.ts || '').slice(0, 10);
-    const bucket = days[day] || (days[day] = { denied: 0, overrides: 0 });
-    if (e.kind === 'override') bucket.overrides++; else bucket.denied++;
+    const day = String(e.ts || '').slice(0, 10) || 'undated';
+    const bucket = days[day] || (days[day] = {});
+    bucket[e.kind] = (bucket[e.kind] || 0) + 1;
   }
-  console.log(`fable-delegate-guard: ${lines.length} events logged`);
+  console.log(`fable-delegate-guard: ${lines.length} events logged (deny-* and override are from before 2026-09-06, when the guard still blocked)`);
   for (const d of Object.keys(days).sort()) {
-    console.log(`  ${d}  denied=${days[d].denied}  overrides=${days[d].overrides}`);
+    const parts = Object.keys(days[d]).sort().map((k) => `${k}=${days[d][k]}`).join('  ');
+    console.log(`  ${d}  ${parts}`);
   }
 }
 
