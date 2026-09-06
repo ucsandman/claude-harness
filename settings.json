@@ -159,6 +159,17 @@
         ]
       },
       {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/Users/sandm/.claude/hooks/slopsquat-guard.cjs\"",
+            "timeout": 15,
+            "statusMessage": "Verifying package names on their registry..."
+          }
+        ]
+      },
+      {
         "matcher": "Agent|Task|Bash|PowerShell|Edit|Write|MultiEdit|mcp__.*",
         "hooks": [
           {

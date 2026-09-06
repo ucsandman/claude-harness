@@ -35,6 +35,11 @@ $freezeOut = & node (Join-Path $claudeDir 'tools\gates\gates.cjs') gate-freeze 2
 $results['frozen-guards-match-lock'] = ($LASTEXITCODE -eq 0)
 if ($LASTEXITCODE -ne 0) { $missing += ($freezeOut -split "`n" | Where-Object { $_ -match 'CHANGED|ADDED|REMOVED|no lock' } | ForEach-Object { $_.Trim() }) }
 
+# 2c. slopsquat-guard must DENY an install of a name no registry has (parser + fail-closed path; no network needed for NOT FOUND vs UNVERIFIED, both deny)
+$payload4 = @{ tool_name = 'Bash'; tool_input = @{ command = 'npm i guard-canary-nonexistent-pkg-xq9z7' } } | ConvertTo-Json -Depth 5 -Compress
+$out4 = $payload4 | node (Join-Path $claudeDir 'hooks\slopsquat-guard.cjs') 2>&1 | Out-String
+$results['slopsquat-denies-unknown-package'] = [bool]($out4 -match '"permissionDecision"\s*:\s*"deny"')
+
 # 3. git pre-commit chain is wired
 $hp = git config --global core.hooksPath 2>$null
 $results['hooksPath-set'] = [bool]($hp -match '\.claude[/\\]git-hooks')

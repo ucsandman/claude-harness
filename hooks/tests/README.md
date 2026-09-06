@@ -8,6 +8,7 @@ green run proves the guard works, not that it blocks everything.
     node hooks/tests/fanout-probe.cjs       # agent-model-guard fan-out rule      (5 checks)
     node hooks/tests/wiredark-probe.cjs     # tools/wiredark: new export, no caller (14 checks, scratch git repo)
     node hooks/tests/gate-freeze-probe.cjs  # gate-freeze deny + hash drift        (20 checks)
+    node hooks/tests/slopsquat-guard-probe.cjs  # package names verified on npm/PyPI/crates (33 checks, live registries)
 
 Both exit nonzero on failure.
 

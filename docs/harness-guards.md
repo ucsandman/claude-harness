@@ -68,19 +68,20 @@ when an MCP call, WebFetch or Chrome read has one. `DECLICK_NUDGE_OFF=1` disable
 
 Denies git commands that rewrite a working tree other agents may be editing: `git stash` (push, pop, apply, drop), `git checkout` or `git restore` of paths, `git reset --hard|--merge|--keep`, `git clean`, `git switch --discard-changes`. Reads, branch creation and commits pass. Override for a deliberate solo-session use: `# GIT_TREE_OK: <why>`, logged to `~/.claude/logs/git-tree-guard.log`. Incident, prompt-side fix and the 18-case self-test: [decisions/feature/2026-09-03-git-tree-guard.md](decisions/feature/2026-09-03-git-tree-guard.md).
 
-## wiredark (2026-09-06)
+## wiredark, gate-freeze, slopsquat-guard (2026-09-06)
 
-`tools/wiredark/wiredark.cjs`, run by the global pre-commit in every repo. A new
-export (JS/TS/Python) with no non-test caller outside its file blocks the commit.
-`// WIRE-DARK[<why>]` on the line above registers a deliberate dark export.
-Verdict carries the volume scanned. `WIREDARK=off` for one shell.
+Three ports from ELAI's archive; rationale in
+`docs/decisions/process/2026-09-06-wire-dark-and-gate-freeze.md`.
 
-## gate-freeze (2026-09-06)
-
-`tools/gates/gate-manifest.json` names the frozen guard files, hashed into a lock.
-`hooks/gate-freeze.cjs` denies a write to one from a cwd outside a harness root;
-`gates.cjs gate-freeze` (canary, harness pre-commit) fails on drift. Relock from
-`~/.claude`: `node tools/gates/gates.cjs --lock`. Note: `docs/decisions/process/`.
+- `tools/wiredark/wiredark.cjs`, in every repo's pre-commit: a new JS/TS/Python
+  export with no non-test caller outside its file blocks. `// WIRE-DARK[<why>]`
+  above it registers a deliberate dark export. `WIREDARK=off` for one shell.
+- `hooks/gate-freeze.cjs` denies a write to a frozen guard file
+  (`tools/gates/gate-manifest.json`) from a cwd outside a harness root;
+  `gates.cjs gate-freeze` fails on hash drift. Relock: `gates.cjs --lock`.
+- `hooks/slopsquat-guard.cjs` looks every package in an npm/pip/uv/cargo
+  install up on its registry first. NOT FOUND, STALE (24 months), BRAND NEW
+  (14 days) and UNVERIFIED deny. `# PKG_OK: <why>` after checking by hand.
 
 ## Codex adapters (2026-09-05)
 

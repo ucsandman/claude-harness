@@ -67,6 +67,17 @@ Three examples of what "incident-born" means:
   and clean are now denied in shell calls; baselines come from copies
   (`git show HEAD:<path>` into a scratch dir). `workflows/fix-findings.js`
   says the same thing in every prompt it sends.
+- **`tools/wiredark`, `hooks/gate-freeze.cjs` and `hooks/slopsquat-guard.cjs`**
+  were ported on 2026-09-06 from the postmortem archive of an abandoned agent
+  harness (DITlieD/ELAI-archive). The first blocks a commit that adds an export
+  nobody calls, because a unit test calling the function directly is
+  indistinguishable from a missing caller and prose only lowers the rate. The
+  second hashes every guard file and stops a project session from editing the
+  evaluator that judges it. The third looks a package name up on its registry
+  before an install runs, because a name from training memory is a guess and
+  a guessed name is how a typo-squat gets in. The rest of that archive stayed
+  where it was; its own postmortem names subsystem-per-problem accretion as
+  what killed it.
 
 The design stance behind all of it: a rule written in prose is a hope. A rule
 that matters gets a hook, the hook gets a probe that makes it fail on purpose,
@@ -92,7 +103,7 @@ flowchart LR
     L --> M[Nightly meditation]
     M -->|observation → fact → rule → trait| C
     M --> SOUL
-    X -->|git commit| H[pre-commit chain<br/>secret scan, doc gates, lint]
+    X -->|git commit| H[pre-commit chain<br/>secret scan, wire-dark, gate freeze, doc gates, lint]
 ```
 
 Two layers do the work. **Hooks** sit on Claude Code's lifecycle events and
@@ -119,6 +130,8 @@ gets logged, rather than a reason to switch the guard off.
 | `batch-guard.cjs` | PreToolUse | Denies the fourth consecutive single-statement shell call or single Read/Glob/Grep. Profiling showed one call per turn was the largest single cost. | `# SEQ: <dependency>` |
 | `slow-command-guard.cjs` | PreToolUse | Denies backgrounded finite test runs and recursive grep/find rooted at a projects dir, home or a drive. Both hang sessions. | `BG_TEST_OK`, `SLOW_OK` |
 | `git-tree-guard.cjs` | PreToolUse | Denies `git stash`, `checkout`/`restore` of paths, `reset --hard`, `clean` in shell calls: a working tree that several agents edit is read-only to git. Reads, branches and commits pass. Prose mentioning the words is not a hit. | `# GIT_TREE_OK: <why>` |
+| `gate-freeze.cjs` | PreToolUse | Denies a write to any frozen guard file (`tools/gates/gate-manifest.json`: hooks, pre-commit, the gates runner, the hooks key of `settings.json`) when the session's cwd is outside a harness root, and denies the relock. `gates.cjs gate-freeze` fails on hash drift at session start and in the harness pre-commit; relock deliberately with `gates.cjs --lock`. | `# GATE_OK: <why>`, `GATE_FREEZE=off` |
+| `slopsquat-guard.cjs` | PreToolUse | Looks every package named in an npm/pnpm/yarn/bun/npx, pip/uv/poetry/pipx or cargo install up on its registry first. NOT FOUND, STALE (no publish in 24 months), BRAND NEW (under 14 days) and UNVERIFIED deny, with the lookup URL in the reason. Verdicts cache 7 days. | `# PKG_OK: <why>`, `SLOPSQUAT_GUARD=off` |
 | `dev-server-guard.cjs` | PreToolUse, PostToolUse | Denies dev servers piped through `head`/`tail` or backgrounded without an explicit opt-in; reminds that stopping a wrapper on Windows leaves the children alive. | `DEV_SERVER_BG_OK` |
 | `scope-lock.cjs` | PreToolUse, UserPromptSubmit | Confines Edit/Write to a directory for the session. Arm with `scope-lock <dir>` as a prompt. | `scope-unlock` |
 | `repeat-tool-guard.cjs` | PostToolUse | Counts identical consecutive calls and escalates a reminder at 3, 5 and 8. Advisory, never blocks. | `REPEAT_GUARD_OFF=1` |
