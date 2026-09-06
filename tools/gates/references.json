@@ -39,6 +39,7 @@
     "docs/doc-standard.md",
     "docs/harness-guards.md",
     "docs/harness-parity.md",
+    "docs/hook-latency.md",
     "docs/human-experience.md",
     "docs/machine-facts.md",
     "docs/manifest-gate.md",
@@ -58,6 +59,7 @@
     "settings.json",
     "tools",
     "tools/deskclaw",
-    "tools/gates/budgets.json"
+    "tools/gates/budgets.json",
+    "tools/tokflow"
   ]
 }

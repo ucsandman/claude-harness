@@ -3,6 +3,17 @@
 Syncs from the private harness to this mirror. Dates are sync dates; the
 underlying changes usually landed over the preceding days.
 
+## 2026-09-06 (seventeenth sync)
+
+- Hook latency pass, measured per hook with a real payload: `hooks/correction-tracker.cjs`
+  replaces the PowerShell version (246 ms per prompt to 45 ms), `hooks/session-count.cjs`
+  replaces the Python version (500 ms per session start to about 150 ms, same count),
+  and the `repowise-rewrite` PreToolUse entry is gone (a no-op since the plugin was
+  turned off).
+- New `docs/hook-latency.md`: the timing table, why hooks for one event cost their
+  slowest member rather than their sum, and why a guard dispatcher was rejected.
+- `tools/gates/budgets.json` carries the new doc; gate lock relocked.
+
 ## 2026-09-06 (sixteenth sync)
 
 - `hooks/fable-delegate-guard.cjs` no longer denies anything. It briefs the session once with the measured token economics and logs large edits and code-writing shell commands for `--report`. Its own log (1,046 events) showed 714 `# FABLE_OK` overrides, 266 shell denials that included `npm test`, a heredoc commit message and a read-only grep, and edit denials retried five to seven times on the same file: a model treats a PreToolUse deny like a transient error, and a cap firing at edit 21 of a coherent change set leaves a half-edited file. The per-prompt edit budget, the shell code-writing denial, the override marker and the "hands-on" prompt toggle are gone. A PreToolUse hook has no `additionalContext`, so a nudge that must reach the model belongs in a SessionStart or UserPromptSubmit briefing, never a mid-task block. `CLAUDE.md` carries the rewritten rule with the evidence trail.

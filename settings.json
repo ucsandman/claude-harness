@@ -80,12 +80,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "repowise-rewrite",
-            "timeout": 5,
-            "statusMessage": "Distilling command output..."
-          },
-          {
-            "type": "command",
             "command": "node \"C:/Users/sandm/.claude/hooks/rm-guard.cjs\"",
             "timeout": 10,
             "statusMessage": "Checking delete target..."
@@ -341,7 +335,7 @@
           },
           {
             "type": "command",
-            "command": "python \"C:/Users/sandm/.claude/hooks/session-count.py\"",
+            "command": "node \"C:/Users/sandm/.claude/hooks/session-count.cjs\"",
             "timeout": 5
           },
           {
@@ -402,7 +396,7 @@
           },
           {
             "type": "command",
-            "command": "pwsh -NoProfile -File \"C:/Users/sandm/.claude/hooks/correction-tracker.ps1\"",
+            "command": "node \"C:/Users/sandm/.claude/hooks/correction-tracker.cjs\"",
             "timeout": 10,
             "statusMessage": "Correction tracker..."
           },
@@ -606,7 +600,7 @@
   "spinnerVerbs": {
     "mode": "replace",
     "verbs": [
-      "Melio — Streamline your business payments and get paid…"
+      "Liner Actions — Join the waitlist, get a free year"
     ]
   },
   "effortLevel": "xhigh",

@@ -16,5 +16,6 @@
   "docs/plugin-hygiene.md": 600,
   "docs/new-project-setup.md": 200,
   "docs/manifest-gate.md": 850,
-  "docs/browser-qa.md": 1650
+  "docs/browser-qa.md": 1650,
+  "docs/hook-latency.md": 400
 }

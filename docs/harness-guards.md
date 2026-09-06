@@ -112,3 +112,7 @@ because compression hid import failures. Git, tsc and eslint still compress.
 will NOT exclude `npx vitest run`. Dry-run with `rtk hook check "<cmd>"`.
 
 **Verify test runs by exit code, never the count.**
+
+## Hook latency pass (2026-09-06)
+
+Timings, ports, removals: [hook-latency.md](hook-latency.md).
