@@ -68,6 +68,20 @@ when an MCP call, WebFetch or Chrome read has one. `DECLICK_NUDGE_OFF=1` disable
 
 Denies git commands that rewrite a working tree other agents may be editing: `git stash` (push, pop, apply, drop), `git checkout` or `git restore` of paths, `git reset --hard|--merge|--keep`, `git clean`, `git switch --discard-changes`. Reads, branch creation and commits pass. Override for a deliberate solo-session use: `# GIT_TREE_OK: <why>`, logged to `~/.claude/logs/git-tree-guard.log`. Incident, prompt-side fix and the 18-case self-test: [decisions/feature/2026-09-03-git-tree-guard.md](decisions/feature/2026-09-03-git-tree-guard.md).
 
+## wiredark (2026-09-06)
+
+`tools/wiredark/wiredark.cjs`, run by the global pre-commit in every repo. A new
+export (JS/TS/Python) with no non-test caller outside its file blocks the commit.
+`// WIRE-DARK[<why>]` on the line above registers a deliberate dark export.
+Verdict carries the volume scanned. `WIREDARK=off` for one shell.
+
+## gate-freeze (2026-09-06)
+
+`tools/gates/gate-manifest.json` names the frozen guard files, hashed into a lock.
+`hooks/gate-freeze.cjs` denies a write to one from a cwd outside a harness root;
+`gates.cjs gate-freeze` (canary, harness pre-commit) fails on drift. Relock from
+`~/.claude`: `node tools/gates/gates.cjs --lock`. Note: `docs/decisions/process/`.
+
 ## Codex adapters (2026-09-05)
 
 Codex runs the guards above from generated hooks in `~/.codex/config.toml` ([harness-parity.md](harness-parity.md)), plus three Codex-only adapters: `codex-rewrite.cjs` (rtk rewrite), `codex-delegate-guard.cjs` (delegate-first for an astra main loop, `wait_agent` timeout floor, `# ASTRA_OK` override) and `codex-memory-inject.cjs`. Behavior, probes and overrides: [codex-adapters.md](codex-adapters.md).

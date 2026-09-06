@@ -4,8 +4,10 @@ Regression tests for the harness guard hooks. Each probe asserts BOTH directions
 the payload that must be denied, and the payload that must still be allowed — so a
 green run proves the guard works, not that it blocks everything.
 
-    node hooks/tests/guard-probe.cjs     # secret-guard + process-kill-guard   (7 checks)
-    node hooks/tests/fanout-probe.cjs    # agent-model-guard fan-out rule      (5 checks)
+    node hooks/tests/guard-probe.cjs        # secret-guard + process-kill-guard   (7 checks)
+    node hooks/tests/fanout-probe.cjs       # agent-model-guard fan-out rule      (5 checks)
+    node hooks/tests/wiredark-probe.cjs     # tools/wiredark: new export, no caller (14 checks, scratch git repo)
+    node hooks/tests/gate-freeze-probe.cjs  # gate-freeze deny + hash drift        (20 checks)
 
 Both exit nonzero on failure.
 

@@ -12,7 +12,7 @@ by better later decisions, and nightly artifact production is optional.
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2011-0078d4)](docs/windows-gotchas.md)
 [![Runtime](https://img.shields.io/badge/runtime-Node%20%2B%20PowerShell%20%2B%20Python-333)](#layout)
-[![Last sync](https://img.shields.io/badge/mirror%20synced-2026--09--05-success)](CHANGELOG.md)
+[![Last sync](https://img.shields.io/badge/mirror%20synced-2026--09--06-success)](CHANGELOG.md)
 [![Sponsor](https://img.shields.io/badge/GitHub%20Sponsors-%E2%9D%A4-db61a2?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/ucsandman)
 
 This is not a starter kit designed in an afternoon. It grew rule by rule out of
@@ -171,7 +171,8 @@ Zero-dependency, one directory each, each with its own README.
 
 | Tool | What it does |
 |---|---|
-| [`gates`](tools/gates/) | Mechanical checks over the harness's own docs, hooks and skills: link rot, hook wiring, declared-vs-actual counts. Runs `--staged` in pre-commit. |
+| [`gates`](tools/gates/) | Mechanical checks over the harness's own docs, hooks and skills: link rot, hook wiring, declared-vs-actual counts, and the guard-file freeze (`gate-freeze`, `--lock`). Runs `--staged` in pre-commit. |
+| [`wiredark`](tools/wiredark/) | A new export with no production caller blocks the commit, in every repo. `// WIRE-DARK[<why>]` registers a deliberate dark export. |
 | [`prove`](tools/prove/) | Automates "a check never observed failing has been run, not verified": breaks the watched thing, confirms red, restores, confirms green. |
 | [`spend`](tools/spend/) | Token and dollar ledger from local transcripts, per session and per day, plus a burn-rate forecast: the 5-hour and 7-day rate-limit windows, trailing pace, and time to a weekly cap you pass in. |
 | [`tokflow`](tools/tokflow/) | Transcript miner behind the token audit: where the fixed cost per turn actually goes. |

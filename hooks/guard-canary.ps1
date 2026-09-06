@@ -27,6 +27,14 @@ $payload2 = @{ tool_name = 'Agent'; tool_input = @{ description = 'guard canary'
 $out2 = $payload2 | node (Join-Path $claudeDir 'hooks\agent-model-guard.cjs') 2>&1 | Out-String
 $results['model-guard-denies-modelless'] = [bool]($out2 -match '"permissionDecision"\s*:\s*"deny"')
 
+# 2b. gate-freeze must DENY a hook edit from a project cwd, and the frozen fileset must match its lock
+$payload3 = @{ tool_name = 'Edit'; cwd = 'C:/Projects/guard-canary-app'; tool_input = @{ file_path = (Join-Path $claudeDir 'hooks\rm-guard.cjs'); old_string = 'a'; new_string = 'b' } } | ConvertTo-Json -Depth 5 -Compress
+$out3 = $payload3 | node (Join-Path $claudeDir 'hooks\gate-freeze.cjs') 2>&1 | Out-String
+$results['gate-freeze-denies-project-edit'] = [bool]($out3 -match '"permissionDecision"\s*:\s*"deny"')
+$freezeOut = & node (Join-Path $claudeDir 'tools\gates\gates.cjs') gate-freeze 2>&1 | Out-String
+$results['frozen-guards-match-lock'] = ($LASTEXITCODE -eq 0)
+if ($LASTEXITCODE -ne 0) { $missing += ($freezeOut -split "`n" | Where-Object { $_ -match 'CHANGED|ADDED|REMOVED|no lock' } | ForEach-Object { $_.Trim() }) }
+
 # 3. git pre-commit chain is wired
 $hp = git config --global core.hooksPath 2>$null
 $results['hooksPath-set'] = [bool]($hp -match '\.claude[/\\]git-hooks')
@@ -63,5 +71,6 @@ $ok = -not ($results.Values -contains $false)
 if (-not $ok) {
   $failed = ($results.GetEnumerator() | Where-Object { -not $_.Value } | ForEach-Object { $_.Key }) -join ', '
   Write-Output "GUARD CANARY FAILED: [$failed]. A safety guard is not enforcing right now. Fix this before trusting any guarded operation this session. Details: $statusPath"
+  if (-not $results['frozen-guards-match-lock']) { Write-Output "A frozen guard file changed since the last lock (edited by hand, by Codex, or with the guard off). Review it, then from a harness session: node ~/.claude/tools/gates/gates.cjs --lock. Drift: $($missing -join '; ')" }
 }
 exit 0

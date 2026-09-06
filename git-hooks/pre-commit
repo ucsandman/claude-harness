@@ -49,6 +49,24 @@ else
     echo "  ⚠ secret-guard SKIPPED (node or $SECRET_GUARD missing) — staged files were NOT scanned"
 fi
 
+# ─── 2b. Wire-dark: a new export with no production caller does not ship (every repo) ───
+# A unit test calling the new function directly is indistinguishable from a missing
+# caller. Verdict carries the volume scanned; DARK blocks; `// WIRE-DARK[<why>]` on
+# the line above registers a deliberate dark export. Off for one shell: WIREDARK=off.
+# Ported from ELAI's production-caller gate, 2026-09-06 (docs/decisions/process/).
+WIREDARK_TOOL="$HOME/.claude/tools/wiredark/wiredark.cjs"
+if command -v node &>/dev/null && [ -f "$WIREDARK_TOOL" ]; then
+    if git diff --cached --name-only --diff-filter=ACMR | grep -qE '\.(ts|tsx|js|jsx|mjs|cjs|py)$'; then
+        echo ""
+        echo "▸ wire-dark check..."
+        if ! node "$(to_native "$WIREDARK_TOOL")"; then
+            exit 1
+        fi
+    fi
+else
+    echo "  ⚠ wiredark SKIPPED (node or $WIREDARK_TOOL missing) — new exports were NOT checked for callers"
+fi
+
 # ─── 3. Harness doc gates (this repo only) ───
 # Word budgets, dead references, decision-note format, expired rules. Runs only
 # inside ~/.claude, only when a .md, settings.json, or SKILL.md is staged.
@@ -61,6 +79,16 @@ HARNESS_ROOT=$(cd "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null && 
 HARNESS_EXPECT=$(cd "$HOME/.claude" 2>/dev/null && pwd)
 GATES="$HOME/.claude/tools/gates/gates.cjs"
 if [ -n "$HARNESS_ROOT" ] && [ "$HARNESS_ROOT" = "$HARNESS_EXPECT" ] && [ -f "$GATES" ] && command -v node &>/dev/null; then
+    # Frozen guard files must match their lock on every harness commit. A guard edited
+    # without a deliberate relock is the finding, whatever else this commit touches.
+    echo ""
+    echo "▸ gate freeze..."
+    if ! node "$(to_native "$GATES")" gate-freeze; then
+        echo ""
+        echo "  ✗ a frozen guard file drifted from tools/gates/gate-manifest.lock.json"
+        echo "    review the change, then: node tools/gates/gates.cjs --lock && git add tools/gates/gate-manifest.lock.json"
+        exit 1
+    fi
     if git diff --cached --name-only --diff-filter=ACM | grep -qE '\.md$|settings\.json$'; then
         echo ""
         echo "▸ harness doc gates..."

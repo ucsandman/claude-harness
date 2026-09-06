@@ -8,6 +8,7 @@
 //   node gates.cjs --strict        advisory checks fail too
 //   node gates.cjs --staged        pre-commit scope: only hits this commit touches block
 //   node gates.cjs --report        also write and open an HTML report
+//   node gates.cjs --lock          re-record the frozen guard hashes (harness root only)
 //
 // Exit 0 all green, 1 a check failed, 2 the runner itself broke.
 // Design source: docs/decisions/process/2026-08-17-mechanical-harness-gates.md
@@ -564,7 +565,28 @@ function checkHookWiring() {
   return { ok, lines };
 }
 
+/**
+ * The frozen guard fileset (gate-manifest.json) matches its recorded hashes. A run
+ * that can rewrite its own evaluator writes itself to PASS, so any drift fails until
+ * a harness session reviews it and relocks with --lock. Never advisory, never
+ * staged-scoped: a guard changed under us is the finding whatever this commit touches.
+ */
+function checkGateFreeze() {
+  const freeze = require('./freeze.cjs');
+  const d = freeze.drift();
+  const lines = [];
+  if (d.noLock) return { ok: false, lines: [`no lock recorded for ${d.count} frozen file(s) — run \`node tools/gates/gates.cjs --lock\` from a harness session`] };
+  for (const p of d.changed) lines.push(`CHANGED ${p}`);
+  for (const p of d.added) lines.push(`ADDED   ${p} (frozen by the manifest, not yet in the lock)`);
+  for (const p of d.removed) lines.push(`REMOVED ${p}`);
+  const ok = lines.length === 0;
+  if (ok) lines.push(`ok   ${d.count} frozen guard files match the lock of ${d.lockedAt.slice(0, 10)}`);
+  else lines.push(`review the change, then relock: node tools/gates/gates.cjs --lock  (${d.count} files checked)`);
+  return { ok, lines };
+}
+
 const CHECKS = [
+  { id: 'gate-freeze', label: 'frozen guard files match their lock', run: checkGateFreeze },
   { id: 'doc-budgets', label: 'standing docs stay under their word ceiling', run: checkDocBudgets },
   { id: 'md-links', label: 'every referenced path resolves', run: checkMdLinks },
   { id: 'ref-ratchet', label: 'no pointer lost since the last accepted snapshot', run: checkRefRatchet },
@@ -622,6 +644,18 @@ function main(argv) {
 
   if (flags.has('--list')) {
     for (const c of CHECKS) console.log(`${c.id.padEnd(16)} ${c.label}`);
+    return 0;
+  }
+
+  if (flags.has('--lock')) {
+    const freeze = require('./freeze.cjs');
+    if (!freeze.inHarnessRoot(process.cwd())) {
+      console.error('refusing to relock from outside a harness root (the run under judgment does not relock its own gate)');
+      return 2;
+    }
+    const d = freeze.writeLock(ids.join(' '));
+    const moved = [...d.changed, ...d.added, ...d.removed];
+    console.log(`locked ${d.count} frozen guard file(s) → ${rel(freeze.LOCK)}${moved.length ? `\n  ${d.changed.length} changed, ${d.added.length} added, ${d.removed.length} removed:\n  ${moved.join('\n  ')}` : '\n  no drift since the previous lock'}`);
     return 0;
   }
 

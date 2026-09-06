@@ -3,6 +3,13 @@
 Syncs from the private harness to this mirror. Dates are sync dates; the
 underlying changes usually landed over the preceding days.
 
+## 2026-09-06 (fifteenth sync)
+
+Two mechanisms ported from the postmortem archive of an abandoned agent harness (DITlieD/ELAI-archive, rules R6/R7/R8). The rest of that archive was left where it was; its own postmortem names subsystem-per-problem accretion as what killed it.
+
+- `tools/wiredark/wiredark.cjs`: a new export (JS/TS/Python) with no non-test caller outside its own file blocks the commit. A unit test calling the function directly is indistinguishable from a missing caller, and prose rules only lower the rate. Barrel re-exports, same-file helpers, framework entrypoints and types warn instead; `// WIRE-DARK[<why>]` on the line above registers a deliberate dark export; exit 2 when the scan cannot run. The global pre-commit runs it in every repo. Replayed over twelve real commits before wiring: zero false blocks. Probe: 14 cases in a scratch git repo.
+- Gate freeze: `tools/gates/gate-manifest.json` names every guard file (hooks, the pre-commit chain, the gates runner, wiredark, the hooks key of `settings.json`, the engine guards). `freeze.cjs` hashes them into a lock; `gates.cjs gate-freeze` fails on drift and `--lock` relocks from a harness root only. `hooks/gate-freeze.cjs` denies a write to a frozen file, and the relock, from a session whose cwd is outside a harness root. Guard-canary checks both at session start. A run does not edit the evaluator that judges it. Probe: 20 cases, including a planted unlocked guard the hash check must catch.
+
 ## 2026-09-05 (fourteenth sync)
 
 Three pieces adopted after a reader compared this harness with their own
