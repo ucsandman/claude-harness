@@ -164,6 +164,46 @@ function gitAddsRealEnvFile(command) {
   return null;
 }
 
+// Environment dumps.
+//
+// The 2026-09-06 incident: `env | grep -i "^CLAUDE\|^ANTHROPIC"` passed every
+// guard in this harness and printed a live ANTHROPIC_API_KEY into the session
+// transcript. Nothing was broken — the coverage map had a hole:
+//   - this hook scans tool INPUTS, and the command held no secret;
+//   - output-secret-watch.cjs scans assistant MESSAGE text (MessageDisplay);
+//   - the key arrived as a Bash tool RESULT, which neither one looks at.
+// A tool result is already in the transcript by the time any PostToolUse hook
+// sees it, so detection there can only alert after the fact. The command shape
+// is the one place this is *preventable*, so it is denied here — the same
+// posture rm-guard takes on a recursive delete.
+//
+// Allowed, because none of these can print a value the caller did not name:
+//   env FOO=bar cmd    — env as a prefix, not a dump
+//   /usr/bin/env node  — interpreter lookup
+//   printenv PATH      — one named variable
+//   env | grep -c X    — a count, never a value
+const ENV_DUMP_PATTERNS = [
+  [/(?:^|[;&|]\s*)env\s*(?:$|[|;&#])/, 'env'],
+  [/(?:^|[;&|]\s*)printenv\s*(?:$|[|;&#])/, 'printenv'],
+  [/(?:^|[;&|]\s*)export\s+-p\b/, 'export -p'],
+  [/(?:^|[;&|]\s*)declare\s+-x\b/, 'declare -x'],
+  [/\/proc\/self\/environ/, '/proc/self/environ'],
+  [/\b(?:Get-ChildItem|Get-Item|gci|ls|dir)\s+(?:-\w+\s+)*env:/i, 'the PowerShell env: drive'],
+];
+
+// A pipeline that provably cannot print a value: a count or a line tally.
+const VALUE_SAFE_SINK = /\|\s*(?:grep\s+(?:-\w+\s+)*-\w*c\w*\b|wc\b)/;
+
+function dumpsEnvironment(command) {
+  const cmd = String(command || '');
+  if (!cmd) return '';
+  if (VALUE_SAFE_SINK.test(cmd)) return '';
+  for (const [re, label] of ENV_DUMP_PATTERNS) {
+    if (re.test(cmd)) return label;
+  }
+  return '';
+}
+
 // Read all of stdin synchronously.
 function readStdin() {
   try {
@@ -254,6 +294,19 @@ function main() {
           `Blocked: the ${toolName} command stages "${env}" into git. ` +
             `A .env file holds secrets and must stay gitignored, never committed. ` +
             `Stage a .env.example with placeholders instead, or confirm this is intentional.`
+        );
+      }
+      // Block dumping the environment: the command is clean but its OUTPUT
+      // carries every secret this process holds, straight into the transcript.
+      const dump = dumpsEnvironment(input.command);
+      if (dump) {
+        deny(
+          `Blocked: this ${toolName} command dumps the environment (${dump}). ` +
+            `Its output would print every secret this process holds — API keys, tokens — ` +
+            `into the transcript, where nothing can retract them. ` +
+            `Read one named variable instead (printenv NAME, echo "$NAME", $env:NAME), ` +
+            `test for presence without printing ([ -n "$NAME" ] && echo set), ` +
+            `or count matches only (env | grep -c NAME).`
         );
       }
       // No single target file; scan the command line itself for inline secrets.

@@ -3,6 +3,27 @@
 Syncs from the private harness to this mirror. Dates are sync dates; the
 underlying changes usually landed over the preceding days.
 
+## 2026-09-06 (nineteenth sync)
+
+- Secret guards gain the channel they were missing: tool RESULTS. The map had
+  `secret-guard.cjs` on tool inputs, the pre-commit chain on commit contents, and
+  `output-secret-watch.cjs` on assistant message text — and nothing on what a tool
+  returns, which is the highest-volume text channel into a transcript. An `env` dump
+  printed a live API key straight past all three.
+- `hooks/secret-guard.cjs` now denies environment dumps at PreToolUse (`env`, `printenv`,
+  `export -p`, `declare -x`, `/proc/self/environ`, the PowerShell `env:` drive). A
+  PostToolUse hook can only alert once the text is already in the transcript, so the
+  command shape is the one place this is preventable. `env FOO=bar cmd`, `/usr/bin/env
+  node`, `printenv NAME` and count-only sinks (`env | grep -c X`) still pass, and the
+  deny message names the alternative.
+- New `hooks/tool-output-secret-watch.cjs` (PostToolUse, all tools) scans tool results
+  for the same vendor shapes: an alert, an audit line that records truncated heads and
+  never the value, and `additionalContext` telling the agent not to echo it. Fails open.
+- Patterns moved to `hooks/lib/secret-patterns.cjs` so the message-layer and tool-result
+  watches cannot drift apart.
+- Worth stating plainly: the message-layer watch had never once fired, so it had never
+  been observed working. A guard with an empty log is unproven, not clean.
+
 ## 2026-09-06 (eighteenth sync)
 
 - Four non-blocking hooks run `"async": true` in `settings.json` (the DashClaw PostToolUse

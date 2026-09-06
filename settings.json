@@ -57,7 +57,7 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "opus[1m]",
+  "model": "claude-fable-5-1[1m]",
   "fallbackModel": [
     "sonnet",
     "haiku"
@@ -236,6 +236,17 @@
       }
     ],
     "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:/Users/sandm/.claude/hooks/tool-output-secret-watch.cjs\"",
+            "timeout": 5,
+            "statusMessage": "Scanning tool output for secret shapes..."
+          }
+        ]
+      },
       {
         "matcher": "TaskStop",
         "hooks": [
@@ -604,7 +615,7 @@
   "spinnerVerbs": {
     "mode": "replace",
     "verbs": [
-      "Liner Actions — One MCP instead of twenty"
+      "No activity for 30 min - ads paused"
     ]
   },
   "effortLevel": "xhigh",
