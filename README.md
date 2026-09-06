@@ -309,7 +309,7 @@ The private repo never contained credentials. Before each sync this mirror is
 swept file by file for key shapes, bearer tokens, credentialed URLs,
 `key=value` secrets, emails and phone numbers, and the sweep prints the file
 count beside its verdict so a clean result on zero files cannot pass as clean.
-The last sync scanned 156 files; the only hits were fake keys inside
+The last sync scanned 184 files; the only hits were fake keys inside
 `tools/deskclaw/tests/`, which exist to prove the redaction works.
 
 If you find something that should not be here, see [SECURITY.md](SECURITY.md).

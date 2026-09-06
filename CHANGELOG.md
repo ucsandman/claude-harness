@@ -3,6 +3,12 @@
 Syncs from the private harness to this mirror. Dates are sync dates; the
 underlying changes usually landed over the preceding days.
 
+## 2026-09-05 (thirteenth sync)
+
+- Verification pass before sharing: mirror re-synced from the working tree (184 files scanned, 3 allowed test-fixture hits, 0 unexpected). README file count corrected from 156 to 184.
+- `docs/harness-guards.md` was over its 700-word ceiling; the Codex adapters section moved to its own doc, `docs/codex-adapters.md`, with an index line left behind.
+- `settings.json` and the gate references refreshed from the live tree.
+
 ## 2026-09-05 (twelfth sync)
 
 - Add a Codex adapter and probe for the delegate-first guard, and align the Fable delegate guard with it.

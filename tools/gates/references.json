@@ -30,6 +30,7 @@
     "docs/ERRORS.md",
     "docs/agent-log-lessons-2026-06-05.md",
     "docs/browser-qa.md",
+    "docs/codex-adapters.md",
     "docs/decision-notes.md",
     "docs/decisions",
     "docs/decisions/feature/2026-08-17-repeat-tool-call-guard.md",
