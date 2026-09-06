@@ -130,6 +130,7 @@ gets logged, rather than a reason to switch the guard off.
 | `correction-tracker.ps1` | UserPromptSubmit | Buckets user corrections so a repeated one surfaces as a rule candidate instead of waiting for a human to notice. | none |
 | `skill-telemetry.py` | Stop | One JSONL record per turn: skills, agents, MCP servers, tools, tokens. The ladder's data layer. | none |
 | `lsp-reaper.ps1` | scheduled | Kills orphaned TypeScript language servers (once found 663 of them holding 13.6 GB). | none |
+| `agent-reaper.ps1` | scheduled, 10 min | Kills orphaned agent processes (a `claude.exe` whose parent died, the MCP servers and `npx -y` launchers it left behind, with their descendants) and headless `claude -p` runs older than 12h. Logs, never kills, when the live session count passes 24: that block belongs to `agent-model-guard`. `-DryRun` prints the victims. | none |
 
 `hooks/tests/` holds the probes. `hooks/adapters/` wires the same files into
 Codex and Antigravity so there is one guard suite, not three copies
@@ -172,7 +173,7 @@ Zero-dependency, one directory each, each with its own README.
 |---|---|
 | [`gates`](tools/gates/) | Mechanical checks over the harness's own docs, hooks and skills: link rot, hook wiring, declared-vs-actual counts. Runs `--staged` in pre-commit. |
 | [`prove`](tools/prove/) | Automates "a check never observed failing has been run, not verified": breaks the watched thing, confirms red, restores, confirms green. |
-| [`spend`](tools/spend/) | Token and dollar ledger from local transcripts, per session and per day. |
+| [`spend`](tools/spend/) | Token and dollar ledger from local transcripts, per session and per day, plus a burn-rate forecast: the 5-hour and 7-day rate-limit windows, trailing pace, and time to a weekly cap you pass in. |
 | [`tokflow`](tools/tokflow/) | Transcript miner behind the token audit: where the fixed cost per turn actually goes. |
 | [`recall`](tools/recall/) | One search across every institutional-memory store on the machine. |
 | [`skillfind`](tools/skillfind/) | Finds any skill on the machine, including the ones no session can see. |
@@ -209,6 +210,7 @@ Zero-dependency, one directory each, each with its own README.
 | [`opus-owner`](agents/opus-owner.md) | Opus | A large or risky task the main loop has scoped. May delegate downward. |
 | [`advisor`](agents/advisor.md) | one rung above the caller | One focused decision. Read-only, guidance only, never capped: a blocked consultation becomes a guess, and a guess costs more than the advice. |
 | [`security-reviewer`](agents/security-reviewer.md) | Opus | Read-only review of anything touching auth, billing, secrets, webhooks or database access. Findings only, never edits. |
+| [`e2e-verifier`](agents/e2e-verifier.md) | Sonnet | Runs the verify command or the route walk for a change someone else made, from a context that did not write it. Reports a verdict with counts, one line per criterion, and which check it made fail on purpose. Never edits. |
 
 ## The meditation ladder
 
@@ -251,6 +253,13 @@ and the write rails for `SOUL.md` are in
 
 Do not clone this expecting a turnkey install. Paths are Windows and specific
 to one machine. The useful move is taking one piece at a time.
+
+**Where the paths live.** The hooks find their siblings with `__dirname` and
+the user's home with `os.homedir()` / `$env:USERPROFILE`, so a copied guard
+runs from wherever you put it. The absolute paths are in three places only:
+`settings.json` (the hook commands), the `*-launcher.vbs` files next to the
+scheduled scripts, and the scheduled-task registrations themselves. Search
+those for the home directory and replace it; nothing else is pinned.
 
 **One guard.** Copy the file, then register it. A PreToolUse hook that prints a
 deny reason to stderr and exits 2 blocks the call and hands the model the
@@ -309,7 +318,7 @@ The private repo never contained credentials. Before each sync this mirror is
 swept file by file for key shapes, bearer tokens, credentialed URLs,
 `key=value` secrets, emails and phone numbers, and the sweep prints the file
 count beside its verdict so a clean result on zero files cannot pass as clean.
-The last sync scanned 184 files; the only hits were fake keys inside
+The last sync scanned 187 files; the only hits were fake keys inside
 `tools/deskclaw/tests/`, which exist to prove the redaction works.
 
 If you find something that should not be here, see [SECURITY.md](SECURITY.md).

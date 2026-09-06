@@ -3,6 +3,16 @@
 Syncs from the private harness to this mirror. Dates are sync dates; the
 underlying changes usually landed over the preceding days.
 
+## 2026-09-05 (fourteenth sync)
+
+Three pieces adopted after a reader compared this harness with their own
+multi-user platform and named what it lacked.
+
+- `hooks/agent-reaper.ps1`: a scheduled reaper for orphaned agent processes. The LSP reaper only watched tsserver; nothing watched a `claude.exe` whose parent died, the MCP servers it left behind, or a headless `claude -p` that never ended. Verified against a planted orphan before it went in.
+- `tools/spend`: burn-rate forecast. The ledger now keeps hourly buckets and reports the 5-hour and 7-day rate-limit windows, trailing pace, a week projection, and time-to-exhaustion against `--cap-week`. Eleven new selftest cases.
+- `agents/e2e-verifier.md`: a Sonnet verifier that runs the checks for a change someone else made and reports evidence only, so the implementer never grades its own work.
+- README: the guards, tools and subagents tables carry the three; the "Stealing pieces" section now says exactly where the machine paths live, after the "hardwired to his machine" feedback.
+
 ## 2026-09-05 (thirteenth sync)
 
 - Verification pass before sharing: mirror re-synced from the working tree (184 files scanned, 3 allowed test-fixture hits, 0 unexpected). README file count corrected from 156 to 184.

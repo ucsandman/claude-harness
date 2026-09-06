@@ -98,6 +98,16 @@ function dayKey(tsIso) {
   return d.toLocaleDateString('en-CA');
 }
 
+// Hour bucket key: epoch ms of the hour start, as a string. The burn-rate
+// windows (5h rate-limit window, 24h, rolling 7d) need finer than a day.
+function hourKey(tsIso) {
+  if (!tsIso) return 'unknown';
+  const d = new Date(tsIso);
+  if (isNaN(d.getTime())) return 'unknown';
+  d.setMinutes(0, 0, 0);
+  return String(d.getTime());
+}
+
 function tierFor(model) {
   const m = String(model || '').toLowerCase();
   if (m.includes('opus')) return 'opus';
@@ -190,13 +200,17 @@ async function processFile(filePath, stat, cachedEntry) {
   const mtimeMs = stat.mtimeMs;
   let offset = 0;
   let perDay = {};
+  let perHour = {};
   let lastMessageId = null;
 
-  if (cachedEntry) {
+  // A cache entry written before hourly buckets existed has no perHour and
+  // is re-read from 0 once; after that it carries both.
+  if (cachedEntry && cachedEntry.perHour) {
     if (size < cachedEntry.size || mtimeMs < cachedEntry.mtimeMs) {
       // Shrank or went backwards in time — rotated/truncated. Re-read from 0.
       offset = 0;
       perDay = {};
+      perHour = {};
       lastMessageId = null;
     } else if (size === cachedEntry.size && mtimeMs === cachedEntry.mtimeMs) {
       // Unchanged — fully served from cache, no bytes read.
@@ -205,18 +219,20 @@ async function processFile(filePath, stat, cachedEntry) {
         byteOffset: cachedEntry.byteOffset,
         lastMessageId: cachedEntry.lastMessageId,
         perDay: cachedEntry.perDay,
+        perHour: cachedEntry.perHour,
         read: false,
       };
     } else {
       // Grew — read only the appended bytes.
       offset = cachedEntry.byteOffset;
       perDay = JSON.parse(JSON.stringify(cachedEntry.perDay));
+      perHour = JSON.parse(JSON.stringify(cachedEntry.perHour));
       lastMessageId = cachedEntry.lastMessageId;
     }
   }
 
   if (offset >= size) {
-    return { size, mtimeMs, byteOffset: offset, lastMessageId, perDay, read: false };
+    return { size, mtimeMs, byteOffset: offset, lastMessageId, perDay, perHour, read: false };
   }
 
   await new Promise((resolve, reject) => {
@@ -235,17 +251,21 @@ async function processFile(filePath, stat, cachedEntry) {
       const msg = rec.message;
       lastMessageId = msg.id;
       const day = dayKey(rec.timestamp);
+      const hour = hourKey(rec.timestamp);
       const model = msg.model || 'unknown';
       if (!perDay[day]) perDay[day] = {};
       if (!perDay[day][model]) perDay[day][model] = emptyBucket();
       addUsage(perDay[day][model], msg.usage);
+      if (!perHour[hour]) perHour[hour] = {};
+      if (!perHour[hour][model]) perHour[hour][model] = emptyBucket();
+      addUsage(perHour[hour][model], msg.usage);
     });
     rl.on('close', resolve);
     stream.on('error', reject);
     rl.on('error', reject);
   });
 
-  return { size, mtimeMs, byteOffset: size, lastMessageId, perDay, read: true };
+  return { size, mtimeMs, byteOffset: size, lastMessageId, perDay, perHour, read: true };
 }
 
 async function scan(projectsDir, days) {
@@ -311,6 +331,7 @@ async function scan(projectsDir, days) {
       byteOffset: result.byteOffset,
       lastMessageId: result.lastMessageId,
       perDay: result.perDay,
+      perHour: result.perHour,
     };
 
     sessions.push({
@@ -320,6 +341,7 @@ async function scan(projectsDir, days) {
       shortId: c.sessionId.slice(0, 8),
       mtimeMs: result.mtimeMs,
       perDay: result.perDay,
+      perHour: result.perHour,
     });
   }
 
@@ -381,6 +403,67 @@ function rowTotals(bucket) {
   return bucket.input + bucket.output + bucket.cacheRead + bucket.cacheWrite5m + bucket.cacheWrite1h;
 }
 
+// ---------------------------------------------------------------------------
+// Burn rate and forecast. The ledger records; this predicts. Anthropic's
+// subscription limits are a 5-hour rolling window and a 7-day rolling
+// window, so those are the two windows reported, plus 24h for a daily feel.
+// Pace is the trailing 3 hours (current partial hour counted as full).
+// With a weekly cap (--cap-week <dollars> or SPEND_CAP_WEEK) it also says
+// how much of the cap is used and how long until it is gone at that pace.
+// Pure: takes `now` so the selftest can pin it.
+function windowTotals(sessions, sinceMs, untilMs) {
+  let tokens = 0, dollars = 0, unknown = false;
+  for (const s of sessions) {
+    for (const hour of Object.keys(s.perHour || {})) {
+      const t = Number(hour);
+      if (!Number.isFinite(t) || t < sinceMs || t >= untilMs) continue;
+      for (const model of Object.keys(s.perHour[hour])) {
+        const b = s.perHour[hour][model];
+        tokens += rowTotals(b);
+        const d = costForBucket(model, b);
+        if (d === null) unknown = true; else dollars += d;
+      }
+    }
+  }
+  return { tokens, dollars, unknown };
+}
+
+function burnReport(sessions, now, capWeek) {
+  const H = 60 * 60 * 1000;
+  const until = now + H; // include the current (partial) hour bucket
+  const w5h = windowTotals(sessions, now - 5 * H, until);
+  const w24h = windowTotals(sessions, now - 24 * H, until);
+  const w7d = windowTotals(sessions, now - 7 * 24 * H, until);
+  const w3h = windowTotals(sessions, now - 3 * H, until);
+  const paceHour = w3h.dollars / 3;
+  const weekAt24hPace = w24h.dollars * 7;
+  let cap = null;
+  if (capWeek > 0) {
+    const remaining = Math.max(0, capWeek - w7d.dollars);
+    cap = {
+      capWeek,
+      usedPct: Math.min(999, (w7d.dollars / capWeek) * 100),
+      hoursLeft: paceHour > 0 ? remaining / paceHour : Infinity,
+    };
+  }
+  return { w5h, w24h, w7d, paceHour, weekAt24hPace, cap };
+}
+
+function fmtHours(h) {
+  if (!Number.isFinite(h)) return 'n/a at zero pace';
+  if (h < 48) return `${h.toFixed(1)}h`;
+  return `${(h / 24).toFixed(1)}d`;
+}
+
+function printBurn(r) {
+  console.log(
+    `BURN  5h ~${fmtDollars(r.w5h.dollars, r.w5h.unknown)} (${fmtNum(r.w5h.tokens)} tok)  24h ~${fmtDollars(r.w24h.dollars, r.w24h.unknown)}  7d ~${fmtDollars(r.w7d.dollars, r.w7d.unknown)}  pace ~${fmtDollars(r.paceHour, false)}/h (3h)`
+  );
+  let line = `FORECAST  week at 24h pace ~${fmtDollars(r.weekAt24hPace, r.w24h.unknown)}`;
+  if (r.cap) line += `  cap-week ${fmtDollars(r.cap.capWeek, false)}: ${r.cap.usedPct.toFixed(0)}% used, exhausted in ~${fmtHours(r.cap.hoursLeft)} at 3h pace`;
+  console.log(line);
+}
+
 function printSummary(dayTotals, cachedCount, readCount, days) {
   const days_ = Object.keys(dayTotals).sort(); // ascending in terminal, oldest first
   let grandIn = 0, grandOut = 0, grandCache = 0, grandDollars = 0, grandUnknown = false;
@@ -408,8 +491,19 @@ function printSummary(dayTotals, cachedCount, readCount, days) {
   console.log(`${cachedCount} cached / ${readCount} read`);
 }
 
-function renderHtml(dayTotals, modelTotals, sessionSummaries, days, cachedCount, readCount) {
+function renderHtml(dayTotals, modelTotals, sessionSummaries, days, cachedCount, readCount, burn) {
   const generatedAt = new Date().toLocaleString();
+  const b = burn || burnReport([], Date.now(), 0);
+  const capCell = b.cap
+    ? `<tr><td>weekly cap ~${fmtDollars(b.cap.capWeek, false)}</td><td class="num">${b.cap.usedPct.toFixed(0)}% used</td><td class="num money">gone in ~${htmlEscape(fmtHours(b.cap.hoursLeft))} at 3h pace</td></tr>`
+    : `<tr><td colspan="3" style="color:var(--ink-muted)">No weekly cap set. Pass <code>--cap-week &lt;dollars&gt;</code> or set <code>SPEND_CAP_WEEK</code> to see time-to-exhaustion.</td></tr>`;
+  const burnRows = `
+<tr><td>last 5h (rate-limit window)</td><td class="num">${fmtNum(b.w5h.tokens)}</td><td class="num money">~${fmtDollars(b.w5h.dollars, b.w5h.unknown)}</td></tr>
+<tr><td>last 24h</td><td class="num">${fmtNum(b.w24h.tokens)}</td><td class="num money">~${fmtDollars(b.w24h.dollars, b.w24h.unknown)}</td></tr>
+<tr><td>last 7d (weekly window)</td><td class="num">${fmtNum(b.w7d.tokens)}</td><td class="num money">~${fmtDollars(b.w7d.dollars, b.w7d.unknown)}</td></tr>
+<tr><td>pace, trailing 3h</td><td class="num"></td><td class="num money">~${fmtDollars(b.paceHour, false)}/h</td></tr>
+<tr><td>week at 24h pace</td><td class="num"></td><td class="num money">~${fmtDollars(b.weekAt24hPace, b.w24h.unknown)}</td></tr>
+${capCell}`;
 
   let grandDollars = 0;
   let grandUnknown = false;
@@ -577,6 +671,12 @@ function renderHtml(dayTotals, modelTotals, sessionSummaries, days, cachedCount,
   <div class="disclaimer">Estimated costs only, not official Anthropic billing. Prices are per-tier public rates matched by substring on the model id (see PRICES table in spend.cjs). Cache-write cost splits 5-minute vs 1-hour writes using Anthropic's standard 1.25x/2x input-price multipliers. "fable" has no published price — it is priced as a placeholder equal to the opus tier until a real rate is known.</div>
 </header>
 
+<h2>Burn rate and forecast</h2>
+<table>
+  <thead><tr><th>window</th><th>tokens</th><th>est $</th></tr></thead>
+  <tbody>${burnRows}</tbody>
+</table>
+
 <h2>Per day</h2>
 <table>
   <thead><tr><th>day</th><th>in</th><th>out</th><th>cache read</th><th>cache write</th><th>est $</th></tr></thead>
@@ -678,6 +778,34 @@ function selftest() {
   ok('CONTRACT: a repeated id after a different id counts again',
      shouldCount(turn('m1'), 'm2') === true);
 
+  // --- burn rate / forecast -------------------------------------------------
+  const H = 3600 * 1000;
+  const now = Date.UTC(2026, 8, 5, 12, 30); // 12:30, so the current hour bucket is 12:00
+  const hourOf = (hoursAgo) => String(now - (now % H) - hoursAgo * H);
+  const mil = (n) => ({ ...emptyBucket(), input: n * 1e6, messages: 1 });
+  const fake = [{ perHour: {
+    [hourOf(0)]: { 'claude-sonnet-5': mil(1) },   // current hour: $3
+    [hourOf(2)]: { 'claude-sonnet-5': mil(1) },   // inside 3h/5h: $3
+    [hourOf(4)]: { 'claude-sonnet-5': mil(1) },   // inside 5h, outside 3h: $3
+    [hourOf(20)]: { 'claude-sonnet-5': mil(1) },  // inside 24h: $3
+    [hourOf(100)]: { 'claude-sonnet-5': mil(1) }, // inside 7d: $3
+    [hourOf(200)]: { 'claude-sonnet-5': mil(1) }, // outside 7d
+  } }];
+  const r = burnReport(fake, now, 0);
+  ok('5h window sums three hours', Math.abs(r.w5h.dollars - 9) < 1e-9);
+  ok('24h window adds the 20h bucket', Math.abs(r.w24h.dollars - 12) < 1e-9);
+  ok('7d window excludes the 200h bucket', Math.abs(r.w7d.dollars - 15) < 1e-9);
+  ok('pace is trailing 3h over 3', Math.abs(r.paceHour - 2) < 1e-9);
+  ok('week forecast is 24h times 7', Math.abs(r.weekAt24hPace - 84) < 1e-9);
+  ok('no cap means no cap block', r.cap === null);
+  const rc = burnReport(fake, now, 30);
+  ok('cap used pct', Math.abs(rc.cap.usedPct - 50) < 1e-9);
+  ok('hours left is remaining over pace', Math.abs(rc.cap.hoursLeft - 7.5) < 1e-9);
+  const idle = burnReport([{ perHour: {} }], now, 30);
+  ok('zero pace never divides by zero', idle.cap.hoursLeft === Infinity && fmtHours(idle.cap.hoursLeft) === 'n/a at zero pace');
+  const legacy = burnReport([{ perDay: { '2026-09-05': { 'claude-sonnet-5': mil(1) } } }], now, 0);
+  ok('a session with no perHour (old cache) contributes nothing, not a crash', legacy.w7d.dollars === 0);
+
   console.log(`\n${pass} passed / ${fail} failed`);
   process.exit(fail ? 1 : 0);
 }
@@ -699,12 +827,22 @@ async function main() {
   const dirIdx = args.indexOf('--projects-dir');
   const projectsDir = dirIdx !== -1 && args[dirIdx + 1] ? args[dirIdx + 1] : DEFAULT_PROJECTS_DIR;
 
+  const capIdx = args.indexOf('--cap-week');
+  const capRaw = capIdx !== -1 && args[capIdx + 1] ? args[capIdx + 1] : process.env.SPEND_CAP_WEEK;
+  const capWeek = capRaw ? parseFloat(capRaw) : 0;
+  if (capRaw && !(capWeek > 0)) {
+    console.error(`spend: invalid --cap-week value`);
+    process.exit(1);
+  }
+
   const { sessions, cachedCount, readCount } = await scan(projectsDir, days);
   const { dayTotals, modelTotals, sessionSummaries } = aggregate(sessions);
+  const burn = burnReport(sessions, Date.now(), capWeek);
 
   printSummary(dayTotals, cachedCount, readCount, days);
+  printBurn(burn);
 
-  const html = renderHtml(dayTotals, modelTotals, sessionSummaries, days, cachedCount, readCount);
+  const html = renderHtml(dayTotals, modelTotals, sessionSummaries, days, cachedCount, readCount, burn);
   fs.writeFileSync(OUT_HTML, html, 'utf8');
   console.log(OUT_HTML);
 

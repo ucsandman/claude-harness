@@ -1,4 +1,15 @@
 {
+  "spinnerVerbs": {
+    "mode": "replace",
+    "verbs": [
+      "Liner Actions — Stop installing MCP servers one by one"
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "node \"C:\\\\Users\\\\sandm\\\\.kickbacks\\\\vibe-ads-statusline.mjs\"",
+    "padding": 0
+  },
   "env": {
     "DASHCLAW_BEHAVIOR_SAMPLES_ENABLED": "1",
     "DASHCLAW_BEHAVIOR_SAMPLES_DIR": "C:/Users/sandm/.dashclaw/behavior-samples",
@@ -435,11 +446,6 @@
       }
     ]
   },
-  "statusLine": {
-    "type": "command",
-    "command": "node \"C:\\\\Users\\\\sandm\\\\.kickbacks\\\\vibe-ads-statusline.mjs\"",
-    "padding": 0
-  },
   "enabledPlugins": {
     "context7@claude-plugins-official": true,
     "frontend-design@claude-plugins-official": true,
@@ -581,12 +587,6 @@
   },
   "outputStyle": "Concise",
   "feedbackDrafts": "off",
-  "spinnerVerbs": {
-    "mode": "replace",
-    "verbs": [
-      "Liner Actions — One MCP instead of twenty"
-    ]
-  },
   "effortLevel": "xhigh",
   "modelSettings": {
     "claude-fable-5": {

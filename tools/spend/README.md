@@ -15,10 +15,33 @@ what they cost.
 ## Usage
 
 ```
-node spend.cjs               # scan last 7 days, write spend.html, print summary
-node spend.cjs --days 14     # change the window
-node spend.cjs --open        # also open spend.html in the default browser
+node spend.cjs                    # scan last 7 days, write spend.html, print summary
+node spend.cjs --days 14          # change the window
+node spend.cjs --open             # also open spend.html in the default browser
+node spend.cjs --cap-week 400     # add time-to-exhaustion against a weekly $ cap (or SPEND_CAP_WEEK)
+node spend.cjs --selftest         # pin the arithmetic, dedup and forecast math
 ```
+
+## Burn rate and forecast
+
+The ledger records; the two lines after the per-day table predict:
+
+```
+BURN  5h ~$12.40 (4,812,000 tok)  24h ~$61.10  7d ~$340.22  pace ~$4.10/h (3h)
+FORECAST  week at 24h pace ~$427.70  cap-week $400.00: 85% used, exhausted in ~14.6h at 3h pace
+```
+
+The windows are the two Anthropic subscription limits (a 5-hour rolling
+window and a 7-day rolling window) plus 24h. Pace is the trailing three
+hour-buckets over three. "Week at 24h pace" is yesterday times seven. The cap
+line appears only with `--cap-week <dollars>` or `SPEND_CAP_WEEK`; the tool
+does not know your plan's real cap, you tell it. The same numbers sit at the
+top of `spend.html`.
+
+This needed hour-granularity buckets, so the cache now stores `perHour`
+(epoch-ms hour start → model → bucket) beside `perDay`. A cache entry written
+before that field existed is re-read from 0 once, which is why the first run
+after the upgrade reports `0 cached / N read`.
 
 Output: `spend.html` in this directory (generated — do not hand-edit, see
 `.gitignore`). Terminal output is one line per day (tokens in/out/cache, est
