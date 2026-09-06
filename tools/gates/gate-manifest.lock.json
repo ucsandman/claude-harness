@@ -1,6 +1,6 @@
 {
   "_comment": "Content hashes of the frozen guard fileset (tools/gates/gate-manifest.json). The gate-freeze check fails on any drift; re-record deliberately with `node tools/gates/gates.cjs --lock` from a harness session after reviewing the change.",
-  "lockedAt": "2026-09-06T15:04:21.571Z",
+  "lockedAt": "2026-09-06T16:47:47.256Z",
   "files": {
     "C:/Users/sandm/.claude/hooks/agent-model-guard.cjs": "52c9a625b15406f9f77c841a",
     "C:/Users/sandm/.claude/hooks/batch-guard.cjs": "a5071662747311fe53920047",
@@ -41,6 +41,7 @@
     "C:/Projects/agnostic-ai/engine/hooks/dashclaw-setup.cjs": "1e9d930be766574795743755",
     "C:/Projects/agnostic-ai/engine/hooks/fable-delegate-guard.cjs": "35cf334122fb961c7dff51f6",
     "C:/Projects/agnostic-ai/engine/hooks/secret-guard.cjs": "92bfe2aa09feffb5621226f9",
+    "C:/Projects/agnostic-ai/engine/hooks/shim.cjs": "752a68e5201e137e6f6c3744",
     "C:/Projects/agnostic-ai/engine/hooks/universal-adapter.cjs": "b4b36eb7121bd474d561da41",
     "C:/Projects/DashClaw/hooks/dashclaw_db_containment.py": "24d2f68b5b1af4f32bcbc6ae",
     "C:/Projects/DashClaw/hooks/dashclaw_posttool.py": "365a6fc66036ad5a0b05c6ca",

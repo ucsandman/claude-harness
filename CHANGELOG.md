@@ -3,6 +3,17 @@
 Syncs from the private harness to this mirror. Dates are sync dates; the
 underlying changes usually landed over the preceding days.
 
+## 2026-09-06 (twenty-second sync)
+
+- `tools/harness-sync/sync.cjs` is retired: the Claude -> Codex/agy port now lives in the
+  Agnostic-AI repo (https://github.com/ucsandman/Agnostic-AI, `npm run port`), generalised to
+  20 clients (rules, hooks with Codex trust hashes, skills, agents, commands, MCP servers,
+  permissions) and tested against fixture homes. `run-daily.ps1` and `parity.cjs` call that
+  CLI; `sync.cjs` is a stub that refuses to run so every generated file has one writer.
+  `docs/harness-parity.md` carries a superseded note and stays as the design record.
+- Gate lock relocked for `engine/hooks/shim.cjs` in Agnostic-AI (the dialect shim that runs
+  Claude-format hooks under Cursor, Gemini CLI and Antigravity).
+
 ## 2026-09-06 (twenty-first sync)
 
 - `scripts/mirror-sync.cjs` copies **tracked** files only. It used to include untracked-

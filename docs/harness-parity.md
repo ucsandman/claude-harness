@@ -1,3 +1,5 @@
+> **Superseded 2026-09-06.** The port described below is now done by the Agnostic-AI repo (C:\Projects\agnostic-ai): npm run port captures ~/.claude and applies rules, hooks (with Codex trust hashes), skills, agents, commands, MCP servers and permissions to every installed client, including Gemini CLI, Antigravity and Cursor through engine/hooks/shim.cjs. Policy (exclusions with reasons, model ladder, Codex-only extra hooks) lives in that repo's core/port.json. tools/harness-sync/sync.cjs is retired. This page stays as the design record.
+
 # Harness parity — Claude Code, Codex CLI, Antigravity CLI
 
 One safety layer, three agents. Built 2026-08-17, made fully generated 2026-09-05.
