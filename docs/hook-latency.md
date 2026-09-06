@@ -38,8 +38,7 @@ that claim. Measured against production:
 | 5.35.0 | 1 | 197-261 ms | 95-122 ms | 488 ms |
 | 5.35.1 | 1 | 90-108 ms | 14-18 ms | 435 ms |
 
-The 435 ms left is Python startup (~150 ms) plus one TLS round trip; the
-next step, if ever needed, is a persistent hook process.
+The 435 ms left is Python startup (~150 ms) plus one TLS round trip.
 
 `dashclaw_posttool.py`, `dashclaw_stop.py`, `sync-main-checkout.py` and
 `skill-telemetry.py` now run `"async": true`: each exits 0 only, writes no
