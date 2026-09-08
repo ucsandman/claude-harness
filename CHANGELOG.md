@@ -3,6 +3,13 @@
 Syncs from the private harness to this mirror. Dates are sync dates; the
 underlying changes usually landed over the preceding days.
 
+## 2026-09-08 (twenty-third sync)
+
+- The nightly meditation runner now makes one weekday fallback attempt from
+  Opus to Sonnet when the first run fails before writing its digest. Both models
+  use the same subscription quota, so this is not independent capacity and does
+  not recover a subscription-wide exhaustion.
+
 ## 2026-09-06 (twenty-second sync)
 
 - `tools/harness-sync/sync.cjs` is retired: the Claude -> Codex/agy port now lives in the

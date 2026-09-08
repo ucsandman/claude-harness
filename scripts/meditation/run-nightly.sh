@@ -27,9 +27,9 @@ LOG="$DIR/out/run.log"
 mkdir -p "$DIR/out"
 
 if [ "$(date +%u)" = "7" ]; then
-  MODE="weekly"; MODEL="fable"
+  MODE="weekly"; MODEL="fable"; FALLBACK_MODEL="opus"
 else
-  MODE="nightly"; MODEL="opus"
+  MODE="nightly"; MODEL="opus"; FALLBACK_MODEL="sonnet"
 fi
 
 # WHY bypassPermissions (decision by Wes, 2026-08-11, aware of the tradeoff):
@@ -74,10 +74,11 @@ LINE="C:/Users/sandm/.claude/meditations/digests/latest-line.txt"
   # matters most. A weekly synthesis on opus beats no weekly synthesis, so fall
   # back once. Guarded on the missing digest so a fable run that did its work
   # and then failed late is never re-run and never double-writes.
-  if [ "$RC" -ne 0 ] && [ "$MODEL" = "fable" ] && [ ! -f "$DIGEST" ]; then
-    echo "=== fable unavailable (rc=$RC) — retrying $MODE on opus ==="
-    MODEL=opus
-    CMD=(/c/Users/sandm/.local/bin/claude -p "/meditate $MODE" --model opus --effort xhigh
+  # Weekdays get the same bounded retry; Opus and Sonnet share subscription quota.
+  if [ "$RC" -ne 0 ] && [ -n "$FALLBACK_MODEL" ] && [ ! -f "$DIGEST" ]; then
+    echo "=== $MODEL unavailable (rc=$RC) — retrying $MODE on $FALLBACK_MODEL ==="
+    MODEL="$FALLBACK_MODEL"
+    CMD=(/c/Users/sandm/.local/bin/claude -p "/meditate $MODE" --model "$MODEL" --effort xhigh
       --permission-mode bypassPermissions --strict-mcp-config)
     cd "C:/Users/sandm/.claude" && "${CMD[@]}"
     RC=$?

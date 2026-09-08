@@ -6,6 +6,15 @@ Nightly reflection loop (see `docs/superpowers/specs/2026-08-11-nightly-meditati
   6:40am daily. Opus + xhigh weekdays; Fable + xhigh Sundays (weekly synthesis).
   It runs just before the 7am fleet briefing, so the night's takeaway is fresh
   when the email goes out.
+- A failed run retries once only if today's digest is absent: weekdays use
+  Opus then Sonnet; Sundays use Fable then Opus. The existing task's 30-minute
+  limit and artifact checks cover both attempts. A written digest prevents a retry.
+  The weekday models share the same subscription quota, so Sonnet is an alternate
+  model attempt, not independent capacity.
+- September 8 repair: an Opus weekly-limit failure left no digest and correctly
+  blocked the briefing. Extending the existing one-retry path to weekdays
+  tries Sonnet once when it is still available; it cannot overcome a
+  subscription-wide quota exhaustion.
 - The loop itself is the `/meditate` skill (`skills/meditate/SKILL.md`).
 - Output: `~/.claude/meditations/` (reflections, digests) — the digest is at
   `meditations/digests/latest.html`; the 7am briefing email carries the
