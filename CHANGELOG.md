@@ -5,7 +5,7 @@ underlying changes usually landed over the preceding days.
 
 ## 2026-09-10 (twenty-fourth sync)
 
-- Dropped the eight  rules (vercel deploy and --prod, git
+- Dropped the eight `permissions.ask` rules (vercel deploy and --prod, git
   push --force and -f, prisma migrate deploy and db push, npm audit fix
   --force). An ask rule prompts in every permission mode, bypass included, so
   bypass sessions kept stopping on deploys. Deny rules stay. Approval now lives
