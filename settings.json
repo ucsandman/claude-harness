@@ -45,19 +45,8 @@
       "Read(**/.git-credentials)",
       "Read(**/.netrc)"
     ],
-    "ask": [
-      "Bash(git push --force:*)",
-      "Bash(git push -f:*)",
-      "Bash(vercel deploy:*)",
-      "Bash(vercel --prod:*)",
-      "Bash(npx prisma migrate deploy:*)",
-      "Bash(prisma migrate deploy:*)",
-      "Bash(npx prisma db push:*)",
-      "Bash(npm audit fix --force:*)"
-    ],
     "defaultMode": "auto"
   },
-  "model": "claude-fable-5-1[1m]",
   "fallbackModel": [
     "sonnet",
     "haiku"
@@ -466,6 +455,11 @@
       }
     ]
   },
+  "statusLine": {
+    "type": "command",
+    "command": "node \"C:\\\\Users\\\\sandm\\\\.kickbacks\\\\vibe-ads-statusline.mjs\"",
+    "padding": 0
+  },
   "enabledPlugins": {
     "context7@claude-plugins-official": true,
     "frontend-design@claude-plugins-official": true,
@@ -505,7 +499,8 @@
     "ui-ux-pro-max@ui-ux-pro-max-skill": false,
     "vercel@claude-plugins-official": false,
     "core-3d-animation@claude-design-skillstack": false,
-    "ponytail@ponytail": false
+    "ponytail@ponytail": false,
+    "i-have-adhd@i-have-adhd": true
   },
   "extraKnownMarketplaces": {
     "claude-design-skillstack": {
@@ -603,16 +598,31 @@
         "source": "github",
         "repo": "DietrichGebert/ponytail"
       }
+    },
+    "i-have-adhd": {
+      "source": {
+        "source": "github",
+        "repo": "ayghri/i-have-adhd"
+      }
     }
   },
   "outputStyle": "Concise",
   "feedbackDrafts": "off",
-  "effortLevel": "xhigh",
+  "spinnerVerbs": {
+    "mode": "replace",
+    "verbs": [
+      "Liner Actions — First 1,000 to join the waitlist go free"
+    ]
+  },
+  "effortLevel": "high",
   "modelSettings": {
     "claude-fable-5": {
       "effortLevel": "high"
     },
     "claude-fable-5-1": {
+      "effortLevel": "medium"
+    },
+    "claude-opus-5": {
       "effortLevel": "medium"
     }
   },
@@ -623,5 +633,6 @@
   "remoteControlAtStartup": true,
   "crossSessionInbound": "accept",
   "inputNeededNotifEnabled": true,
-  "agentPushNotifEnabled": true
+  "agentPushNotifEnabled": true,
+  "model": "claude-fable-5-1[1m]"
 }

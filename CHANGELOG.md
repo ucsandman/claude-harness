@@ -3,6 +3,18 @@
 Syncs from the private harness to this mirror. Dates are sync dates; the
 underlying changes usually landed over the preceding days.
 
+## 2026-09-10 (twenty-fourth sync)
+
+- Dropped the eight  rules (vercel deploy and --prod, git
+  push --force and -f, prisma migrate deploy and db push, npm audit fix
+  --force). An ask rule prompts in every permission mode, bypass included, so
+  bypass sessions kept stopping on deploys. Deny rules stay. Approval now lives
+  in the DashClaw PreToolUse hook, which is the policy layer this harness
+  reports to.
+- Effort levels per model and the spinner verb list updated; the i-have-adhd
+  plugin is registered as a marketplace.
+- Gate manifest lock refreshed.
+
 ## 2026-09-08 (twenty-third sync)
 
 - The nightly meditation runner now makes one weekday fallback attempt from
