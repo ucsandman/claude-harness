@@ -3,6 +3,16 @@
 Syncs from the private harness to this mirror. Dates are sync dates; the
 underlying changes usually landed over the preceding days.
 
+## 2026-09-11 (twenty-fifth sync)
+
+- New `tools/memory-lint/`: machine checks for the tiered memory store (ROM,
+  RAM, disk, tape). It fails on an over-cap MEMORY.md (Claude Code loads only
+  the first 200 lines or 25KB), an untagged new fact line, a deleted struck
+  line, an edited archive file, or a dead index path. The memory store's commit
+  hook runs it on staged changes and nightly meditation runs a full pass.
+  Canonical source: github.com/ucsandman/markdown-agent-memory.
+- CLAUDE.md Memory section gains the tier rule.
+
 ## 2026-09-10 (twenty-fourth sync)
 
 - Dropped the eight `permissions.ask` rules (vercel deploy and --prod, git

@@ -12,7 +12,7 @@ by better later decisions, and nightly artifact production is optional.
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2011-0078d4)](docs/windows-gotchas.md)
 [![Runtime](https://img.shields.io/badge/runtime-Node%20%2B%20PowerShell%20%2B%20Python-333)](#layout)
-[![Last sync](https://img.shields.io/badge/mirror%20synced-2026--09--10-success)](CHANGELOG.md)
+[![Last sync](https://img.shields.io/badge/mirror%20synced-2026--09--11-success)](CHANGELOG.md)
 [![Sponsor](https://img.shields.io/badge/GitHub%20Sponsors-%E2%9D%A4-db61a2?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/ucsandman)
 
 This is not a starter kit designed in an afternoon. It grew rule by rule out of
