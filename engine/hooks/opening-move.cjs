@@ -24,9 +24,9 @@
  * names and the stored Next text (160 chars, control characters stripped, double
  * quotes and backticks turned into '): never a
  * commit subject, transcript prose or file contents.
- * Not built yet, each printed as such: turn-close.jsonl and the ledger fields
- * next/lastTest/touched (turn-close.cjs, step 2), digest.json and the fixture
- * (step 3), the dashboard Today tab (step 5).
+ * Not built yet, each printed as such: digest.json and the fixture (step 3), the
+ * dashboard Today tab (step 5). turn-close.jsonl and the ledger fields
+ * next/lastTest/touched print as "turn-close.cjs has not written it yet" until it has.
  */
 'use strict';
 const fs = require('fs');
@@ -70,7 +70,7 @@ const GO_FIRST_RE = /^\s*(go|go ahead|continue|next|resume|do it|yes|ok|start|wh
 const GO_LATER_RE = /^\s*(go|go ahead|continue|next|resume|do it|yes|ok|start|what'?s next\??)\W*$/i;
 const NUDGE_RE = /\b(test|verify|did you (run|check)|run it|check it|prove)\b/i;
 // The closing Next line (rule text, spec 2.8). Untagged means `you`; "Next (none)" needs no colon.
-const NEXT_LINE_RE = /^[ \t>*_-]*Next[ \t]*(?:\((me|you|none|wait[ \t]+(\d{4}-\d{2}-\d{2}))\))?[*_]*[ \t]*(?::[*_]*[ \t]*(.*?)[ \t]*$|$)/gim;
+const NEXT_LINE_RE = /^[ \t>*_-]*Next[ \t]*(?:\((me|you|none|wait[ \t]+(\d{4}-\d{2}-\d{2}))\))?[*_]*[ \t]*(?::[*_]*[ \t]*(.*)$|$)/gim;
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 const CTRL_RE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]+/g;
 const QUOTE_RE = /["`\u201c\u201d\u201e\u201f\u2033\uff02]/g;
@@ -148,14 +148,73 @@ function ringOf(rs) {
 
 // --- hard stops and owners ---
 
-/** Any NEXT naming a hard stop becomes "prepare <x>; <x> stays yours", owner `you`. Idempotent. */
-function hardStop(text, owner) {
+// A hit inside a path is exempt only when the path is being edited or read, never run (fail closed).
+// It fires unless ALL of: its whitespace token is path-shaped (a code or doc extension, a backslash,
+// two slashes, a ./ ~/ or C: start, or one slash with the hit hyphen- or underscore-joined inside its
+// segment, so docs/publish-flow is a path and send/post a word pair); something precedes the token;
+// no run verb precedes it (EXEC_RE); and the token follows a comma, another path, or an edit-context
+// word (EDIT_CTX_RE). So 'update release-notes.md' and 'see docs/deploy-notes.md' stay yours to do,
+// while 'deploy-prod.sh', 'run scripts/deploy.sh', 'send/post' and dashboard.stripe.com are Wes's.
+const FILE_EXT_RE = /\.(?:[cm]?js|jsx|ts|tsx|py|ps1|sh|bat|cmd|md|json|ya?ml|toml|txt|html?|css)$/i;
+const EXEC_RE = /\b(run|runs|execute|exec|invoke|bash|sh|zsh|node|python3?|py|pwsh|powershell|npx|source|launch|trigger|kick off|call|start)\b/i;
+const EDIT_CTX_RE = /\b(in|at|to|of|for|from|on|into|the|a|an|file|per|see|via|under|with|against|by|as|using|inside|within|fix|fixes|edit|edits|update|updates|rewrite|read|open|tidy|rename|review|check|lint|format|inspect|refactor|document|patch|split|trim|touch|extend|adjust|tweak|repair|debug|test|probe|cover|look|grep|diff|compare|copy|create|write|draft|finish|complete|polish|simplify|clean|shorten|annotate|typecheck|wire|unwire|stub|mock|port|sync|revert|restore|reorder|sort|dedupe|merge|resolve|comment|uncomment|edited|changed|modified)$/i;
+const HARD_STOP_G = new RegExp(HARD_STOP_RE.source, 'gi');
+const PUSH_G = /\bpush\b/gi;
+const edgeStrip = (s) => s.replace(/^[(\[{<'"`]+/, '').replace(/[)\]}>,;:!?.'"`]+$/, '');
+/** The whitespace token holding index `at`: {raw start, edge-stripped text, offset of `at` inside it}. */
+function tokenAt(t, at) {
+  let s = at;
+  while (s > 0 && !/\s/.test(t[s - 1])) s--;
+  let e = at;
+  while (e < t.length && !/\s/.test(t[e])) e++;
+  const raw = t.slice(s, e);
+  const lead = raw.length - raw.replace(/^[(\[{<'"`]+/, '').length;
+  return { start: s, tok: edgeStrip(raw), off: at - s - lead };
+}
+/** True when `tok` reads as a path. `off` is the hit's offset inside tok (the one-slash test needs it). */
+function pathShaped(tok, off) {
+  if (FILE_EXT_RE.test(tok) || tok.includes('\\') || /^(\.\/|~\/|[A-Za-z]:)/.test(tok)) return true;
+  const slashes = (tok.match(/\//g) || []).length;
+  if (slashes >= 2) return true;
+  if (slashes !== 1 || off == null || off < 0) return false;
+  // the run of letters, digits, '-' and '_' around the hit, inside its segment: joined when it holds a '-' or '_' between letters
+  let a = off;
+  while (a > 0 && /[A-Za-z0-9_-]/.test(tok[a - 1])) a--;
+  let b = off;
+  while (b < tok.length && /[A-Za-z0-9_-]/.test(tok[b])) b++;
+  return /[A-Za-z0-9][-_]+[A-Za-z]|[A-Za-z][-_]+[A-Za-z0-9]/.test(tok.slice(a, b));
+}
+/** A hit at `at` fires unless it sits in a path that is being edited or read (see the rule above). */
+function fires(t, at) {
+  const { start, tok, off } = tokenAt(t, at);
+  if (!pathShaped(tok, off)) return true;
+  const before = t.slice(0, start).trimEnd();
+  if (!before || EXEC_RE.test(before)) return true;
+  if (before.endsWith(',')) return false;
+  const prev = edgeStrip(before.split(/\s+/).pop());
+  if (pathShaped(prev, null) || EDIT_CTX_RE.test(prev)) return false;
+  return true;
+}
+/** The first hit of a global regex that fires, lowercased; null when none. */
+function firstHit(t, re) {
+  re.lastIndex = 0;
+  for (let m = re.exec(t); m; m = re.exec(t)) {
+    if (fires(t, m.index)) return (m[1] || m[0]).toLowerCase();
+  }
+  return null;
+}
+
+/**
+ * Any NEXT naming a hard stop becomes "prepare <x>; <x> stays yours", owner `you`. Idempotent.
+ * In a repo whose push deploys (deploysOnPush), any NEXT that says "push" is a hard stop too.
+ */
+function hardStop(text, owner, deploys = false) {
   const t = clean(text, NEXT_MAX * 2 + 40).replace(QUOTE_RE, "'");
-  const m = HARD_STOP_RE.exec(t);
-  if (!m) return { text: t, owner, hardStop: null };
-  if (/^prepare .+ stays yours$/i.test(t)) return { text: t, owner: 'you', hardStop: m[1].toLowerCase() };
+  const x0 = firstHit(t, HARD_STOP_G) || (deploys ? firstHit(t, PUSH_G) : null);
+  if (!x0) return { text: t, owner, hardStop: null };
+  if (/^prepare .+ stays yours$/i.test(t)) return { text: t, owner: 'you', hardStop: x0 };
   const x = clean(t, NEXT_MAX).replace(/[\s.;:!?]+$/, '');
-  return { text: `prepare ${x}; ${x} stays yours`, owner: 'you', hardStop: m[1].toLowerCase() };
+  return { text: `prepare ${x}; ${x} stays yours`, owner: 'you', hardStop: x0 };
 }
 
 /** Effective owner of a stored Next: me | you | none | hidden (wait until a future or unparsable date). */
@@ -422,7 +481,7 @@ function rank(state) {
     }
   }
   // 2 tests-red
-  if (!s.lastTest || typeof s.lastTest !== 'object') skip(2, 'tests-red', 'lastTest: turn-close (step 2)');
+  if (!s.lastTest || typeof s.lastTest !== 'object') skip(2, 'tests-red', 'lastTest: turn-close.cjs has not written it yet');
   else {
     res.checked++;
     if (s.lastTest.isError === true) {
@@ -431,7 +490,7 @@ function rank(state) {
     }
   }
   // 3 resume: the stored Next (ledger, or the transcript fallback) under 72 h
-  if (s.next === undefined) skip(3, 'resume', 'no Next source: ledger next is turn-close (step 2), no readable transcript');
+  if (s.next === undefined) skip(3, 'resume', 'no Next source: ledger next (turn-close.cjs has not written it yet), no readable transcript');
   else {
     res.checked++;
     const nx = s.next;
@@ -460,7 +519,7 @@ function rank(state) {
     if (x) add(5, 'syntax-left', `${x.file} was left with a syntax error at ${day(x.tsMs)} ${hhmm(x.tsMs)}.`, 'me', '2 min', `${x.file}|${x.tsMs}`, now - x.tsMs, `${x.file} syntax error`);
   }
   // 6 commit-scoped: the last session's touched files that are still dirty
-  if (!Array.isArray(s.touched)) skip(6, 'commit-scoped', 'touched: turn-close (step 2)');
+  if (!Array.isArray(s.touched)) skip(6, 'commit-scoped', 'touched: turn-close.cjs has not written it yet');
   else if (!st.ok) skip(6, 'commit-scoped', `git status: ${st.why}`);
   else {
     res.checked++;
@@ -496,7 +555,7 @@ function rank(state) {
       const oldest = Math.min(...stale.map((d) => d.mtimeMs));
       const newest = Math.max(...stale.map((d) => d.mtimeMs));
       if (now - newest > 21 * DAY) res.archived++;
-      else add(9, 'stale-dirty', `Decide the ${pl(stale.length, 'file')} left since ${day(oldest)}: commit, stash or drop; I draft the message.`, 'me', '3 min', `${stale.length}|${oldest}|${newest}`, now - oldest, `${pl(stale.length, 'file')} dirty since ${day(oldest)}`);
+      else add(9, 'stale-dirty', `Decide the ${pl(stale.length, 'file')} left since ${day(oldest)}: commit, stash or discard; I draft the message.`, 'me', '3 min', `${stale.length}|${oldest}|${newest}`, now - oldest, `${pl(stale.length, 'file')} dirty since ${day(oldest)}`);
     }
   }
   // 10 open-task (D2): named by file and line only, never the item text
@@ -513,7 +572,7 @@ function rank(state) {
   const staleTop = s.staleTop || {};
   const me = [];
   for (const raw of items) {
-    const it = { ...raw, ...hardStop(raw.text, raw.owner) };
+    const it = { ...raw, ...hardStop(raw.text, raw.owner, !!repo.deploysOnPush) };
     res.kinds[it.kind] = it.hash;
     if (RED_KINDS.has(it.kind)) res.red.push(it);
     if (it.owner === 'you') { res.leftForWes.push(it); continue; }
@@ -860,7 +919,7 @@ function main(evt, opts = {}) {
   let text = '';
   const owner = bound ? ownerOf(bound, now) : null;
   if (bound && (owner === 'me' || owner === 'you')) {
-    const f = hardStop(stored ? nextText(bound.text) : bound.text, owner);
+    const f = hardStop(stored ? nextText(bound.text) : bound.text, owner, deploysOnPush(found.top));
     const kind = nameOnly(bound.kind || 'resume', 30);
     const h = bound.hash || sha12(kind, f.text);
     ses.goUsed = Array.isArray(ses.goUsed) ? ses.goUsed : [];
@@ -880,7 +939,7 @@ function main(evt, opts = {}) {
 }
 
 if (require.main === module) {
-  const guard = setTimeout(() => process.exit(0), 4500); // under the 5 s hook timeout: exit silent, never hang
+  const guard = setTimeout(() => process.exit(0), 4500); // well under the 10 s hook timeout: exit silent, never hang
   guard.unref();
   let evt = {};
   try { evt = JSON.parse(fs.readFileSync(0, 'utf8')); } catch (_) {}

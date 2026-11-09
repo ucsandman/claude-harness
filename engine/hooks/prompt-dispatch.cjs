@@ -137,7 +137,7 @@ function report() {
   for (const r of last) for (const [k, v] of Object.entries(r.ms || {})) (per[k] = per[k] || []).push(v);
   const med = (a) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
   console.log(`prompt-dispatch: ${rows.length} runs logged, last ${last.length}: median total ${med(last.map((r) => r.total))} ms, max ${Math.max(...last.map((r) => r.total))} ms`);
-  for (const [k, v] of Object.entries(per).sort((a, b) => med(b[1]) - med(a[1]))) console.log(`  ${k.padEnd(28)} median ${String(med(v)).padStart(5)} ms  max ${String(Math.max(...v)).padStart(5)} ms`);
+  for (const [k, v] of Object.entries(per).sort((a, b) => med(b[1]) - med(a[1]))) console.log(`  ${k.padEnd(28)} median ${String(med(v)).padStart(5)} ms  max ${String(Math.max(...v)).padStart(5)} ms  n=${v.length}`);
   const errs = last.filter((r) => Object.keys(r.errors || {}).length);
   if (errs.length) { console.log(`  ${errs.length} run(s) with a hook error; last:`); for (const [k, v] of Object.entries(errs[errs.length - 1].errors)) console.log(`    ${k}: ${v}`); }
 }

@@ -301,12 +301,15 @@ try {
   kase('j', 'an overflowing brief stays within 1,400 chars, ends with the whole USE line and says how much it dropped', () => {
     const dir = mkRepo('fx-overflow-' + 'x'.repeat(48));
     gitx(dir, ['checkout', '-q', '-b', 'feature/' + 'y'.repeat(52)]);
-    const old = (Date.now() - 10 * 24 * H) / 1000;
+    // Stale files past 21 days are archived, not an item (the stale-dirty template is no longer a hard
+    // stop since step 2, so it would outrank open-task); the third you-item is a touched file named "deploy".
+    const old = (Date.now() - 30 * 24 * H) / 1000;
     for (const f of ['s1.txt', 's2.txt', 's3.txt']) { const p = path.join(dir, f); fs.writeFileSync(p, 'x\n'); fs.utimesSync(p, old, old); }
+    fs.writeFileSync(path.join(dir, 'deploy'), 'x\n');
     fs.mkdirSync(path.join(dir, '.agents', 'memory', 'plans'), { recursive: true });
     fs.writeFileSync(path.join(dir, '.agents', 'memory', 'plans', 'p.md'), '- [ ] first\n- [ ] second\n');
     seed(dir, {
-      ring: [{ session: 'sibj', transcript_path: transcript('tx-long', 'Next (me): deploy ' + 'the long release candidate build '.repeat(6)), cwd: dir, ts: iso(-60e3), source: 'prompt' }],
+      ring: [{ session: 'sibj', transcript_path: transcript('tx-long', 'Next (me): deploy ' + 'the long release candidate build '.repeat(6)), cwd: dir, ts: iso(-60e3), source: 'prompt', touched: ['deploy'] }],
       lastTest: { isError: true, cmd: 'npm run deploy:check', ts: iso(-H) },
     });
     const r = run(ss(dir, 'sj1'));
@@ -335,6 +338,52 @@ try {
     assert.ok(/git 2 of 3 \(rev-list: no upstream\)/.test(r.ctx), r.ctx);
     assert.ok(/^clean \(UNVERIFIED: fixture not built\): 0 dirty, unpushed: unknown \(no upstream\), 0 of \d+ NEXT rules matched/m.test(r.ctx), r.ctx);
     assert.strictEqual(r.sys, undefined, 'clean must carry no systemMessage');
+  });
+
+  kase('m', 'in a repo that deploys on push, a push NEXT (rung 7 or a stored Next) is LEFT FOR WES as "prepare ..."; file names and the stale-dirty template are not hard stops', () => {
+    const base = { now: Date.now(), repo: { name: 'x', branch: 'main', top: TMP }, git: { status: { ok: true, dirty: [] }, ahead: { ok: true, n: 0 } }, markers: { tasks: [] } };
+    const dep = { ...base, repo: { ...base.repo, deploysOnPush: true } };
+    const pushNext = { text: 'push the commits', owner: 'me', ts: iso(-H) };
+    const stored = mod.rank({ ...dep, next: pushNext });
+    const r7 = mod.rank({ ...dep, git: { ...base.git, ahead: { ok: true, n: 2 } } });
+    const plain = mod.rank({ ...base, next: pushNext });
+    const stale = mod.rank({ ...base, git: { status: { ok: true, dirty: [{ path: 'a.txt', mtimeMs: Date.now() - 10 * 24 * H }] }, ahead: { ok: true, n: 0 } } });
+    // A path that is edited or read stays me; one that is run, a bare file token, a word pair joined by a
+    // slash, or a host name is a hard stop (the file-name exemption fails closed). Every string is judged
+    // before anything throws, so a failure lists all the misses; the me side is recorded as negatives.
+    const rankAs = (s, deploys) => mod.rank({ ...(deploys ? dep : base), next: { text: s, owner: 'me', ts: iso(-H) } });
+    const isMe = (s, deploys) => { const x = rankAs(s, deploys); return !!(x.next && x.next.owner === 'me' && x.next.text === s); };
+    const isYou = (s, deploys) => { const x = rankAs(s, deploys); return x.next === null && !!x.leftForWes[0] && x.leftForWes[0].owner === 'you' && x.leftForWes[0].text === `prepare ${s}; ${s} stays yours`; };
+    const meList = [['fix post-edit-diagnostics.cjs and update release-notes.md'], ['fix the parse error in post-edit-diagnostics.cjs'], ['update release-notes.md'],
+      ['tidy engine/deploy/README'], ['read docs/publish-flow'], ['fix tools/post-edit/check'], ['open C:\\Projects\\release-tools\\x'],
+      ['commit the 8 files (docs/guards.md, engine/hooks/release-ledger.cjs, engine/tests/reg-hooks.cjs)'], ['see docs/deploy-notes.md'], ['open ./publish'],
+      ['Commit the 2 files the last session edited (deploy-notes.md, a.cjs) by pathspec; I draft the message.'],
+      [stale.next ? stale.next.text : 'stale-dirty rung missing'], ['fix push-notify.ts', true]];
+    const youList = [...['send/post the launch note', 'deploy/ship the site', 'delete/recreate the stale branch', 'email/DM Wes the summary',
+      'run scripts/deploy.sh', 'node scripts/release.cjs', 'run ./publish', './publish', 'update the webhook on dashboard.stripe.com',
+      'rotate the key on prod.example.com', 'git push origin +refs/heads/main', 'run deploy-prod.sh', 'bash scripts/release-v2.sh',
+      'node scripts/publish-npm.cjs', 'run drop-tables.py', 'run migrate-db.ts', 'deploy-prod.sh', 'run a.cjs, deploy.sh', 'then run deploy.sh'].map((s) => [s]),
+      ['run scripts/push.sh', true], ['push to origin', true]];
+    const tag = ([s, d]) => s + (d ? ' (deploy on push)' : '');
+    const meMiss = meList.filter(([s, d]) => !isMe(s, d)).map(tag);
+    const youMiss = youList.filter(([s, d]) => !isYou(s, d)).map(tag);
+    const record = (label, held) => { try { neg('m', label, held); } catch (_) {} }; // the assert below reports every miss at once
+    record('the stale-dirty NEXT stays me and says "commit, stash or discard"', () => stale.next && stale.next.kind === 'stale-dirty' && stale.next.owner === 'me' && /commit, stash or discard/.test(stale.next.text));
+    for (const x of meList) record(`a NEXT naming a file it edits or reads stays me: ${tag(x)}`, () => !meMiss.includes(tag(x)));
+    assert.ok(!meMiss.length && !youMiss.length, `${youMiss.length} of ${youList.length} hard stops not yours: ${youMiss.join(' | ')}; ${meMiss.length} of ${meList.length} edits not me: ${meMiss.join(' | ')}`);
+    assert.ok(stored.next === null && stored.leftForWes[0].text === 'prepare push the commits; push the commits stays yours', JSON.stringify(stored.leftForWes));
+    assert.ok(r7.leftForWes.some((x) => x.kind === 'unpushed-clean' && x.owner === 'you' && /^prepare Push 2 commits on main/.test(x.text)), JSON.stringify(r7.leftForWes));
+    assert.ok(plain.next && plain.next.owner === 'me', 'without deploysOnPush a push NEXT stays me: ' + JSON.stringify(plain.next));
+    assert.strictEqual(mod.hardStop('ship release-notes.md then deploy to prod', 'me').owner, 'you', 'a real hard stop beside a file name still fires');
+  });
+
+  kase('n', 'a Next line padded with 80,000 spaces parses in under 50 ms (NEXT_LINE_RE is linear) and keeps its text', () => {
+    assert.strictEqual(typeof mod.parseNext, 'function', 'opening-move must export parseNext');
+    const t0 = process.hrtime.bigint();
+    const p = mod.parseNext('Next (me): a' + ' '.repeat(80000) + 'b');
+    const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+    assert.ok(ms < 50, `parseNext took ${ms.toFixed(1)} ms`);
+    assert.ok(p && p.owner === 'me' && p.text.startsWith('a'), JSON.stringify(p));
   });
 } finally {
   try { fs.rmSync(TMP, { recursive: true, force: true }); } catch (_) {}

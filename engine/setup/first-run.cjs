@@ -179,9 +179,40 @@ function wireAgentHooks(home = HOME) {
       const hasOpening = (groups) =>
         (groups || []).some(g => (g.hooks || []).some(h => /opening-move/i.test(h.command || '')));
       if (!hasOpening(cfg.hooks.SessionStart)) {
-        cfg.hooks.SessionStart.push({ matcher: 'startup|clear|compact', hooks: [{ type: 'command', command: hookCommand('opening-move.cjs'), timeout: 5 }] });
+        cfg.hooks.SessionStart.push({ matcher: 'startup|clear|compact', hooks: [{ type: 'command', command: hookCommand('opening-move.cjs'), timeout: 10 }] });
         installed.push('opening-move.cjs');
       }
+      // The doctor's prompt-hooks check wants a command hook at 10 s or more; an install wired at 5 s is raised
+      // (no timeout means Claude Code's 60 s default and stays as it is).
+      const raised = [];
+      const raiseTimeout = (event, pattern) => {
+        for (const g of cfg.hooks[event] || []) {
+          for (const h of (g && Array.isArray(g.hooks) ? g.hooks : [])) {
+            if (h && pattern.test(h.command || '') && Number(h.timeout) > 0 && Number(h.timeout) < 10) { h.timeout = 10; raised.push(event); }
+          }
+        }
+      };
+      raiseTimeout('SessionStart', /opening-move/i);
+
+      // turn-close closes every turn (the Next ledger, bus evidence, the verify check). It replaces
+      // forced-verify-stop-gate.cjs, which read a field the Stop payload never carries: that
+      // command is dropped from its group, and a group left empty by the drop goes with it.
+      const removed = [];
+      const isDeadGate = (h) => /forced-verify-stop-gate/i.test((h && h.command) || '');
+      if (!Array.isArray(cfg.hooks.Stop)) cfg.hooks.Stop = [];
+      cfg.hooks.Stop = cfg.hooks.Stop.flatMap(g => {
+        if (!g || !Array.isArray(g.hooks) || !g.hooks.some(isDeadGate)) return [g];
+        removed.push('forced-verify-stop-gate.cjs');
+        const rest = g.hooks.filter(h => !isDeadGate(h));
+        return rest.length ? [{ ...g, hooks: rest }] : [];
+      });
+      const hasTurnClose = (groups) =>
+        (groups || []).some(g => (g.hooks || []).some(h => /turn-close/i.test(h.command || '')));
+      if (!hasTurnClose(cfg.hooks.Stop)) {
+        cfg.hooks.Stop.push({ hooks: [{ type: 'command', command: hookCommand('turn-close.cjs'), timeout: 10 }] });
+        installed.push('turn-close.cjs');
+      }
+      raiseTimeout('Stop', /turn-close/i);
 
       // capability-graph-guard gates the delegation edges themselves, and needs
       // SubagentStart to learn each subagent's model (no other event carries it).
@@ -216,7 +247,7 @@ function wireAgentHooks(home = HOME) {
 
       if (fs.existsSync(claudeSettings)) backup(claudeSettings); else fs.mkdirSync(path.dirname(claudeSettings), { recursive: true });
       fs.writeFileSync(claudeSettings, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
-      console.log(`  ✓ Claude Code hooks in ~/.claude/settings.json (dashclaw-guard + secret-guard + fable-delegate-guard + capability-graph-guard${installed.length ? `; added ${installed.join(', ')}` : '; already present'}; advisor agent ${report.claude.advisorAgent})`);
+      console.log(`  ✓ Claude Code hooks in ~/.claude/settings.json (dashclaw-guard + secret-guard + fable-delegate-guard + capability-graph-guard${installed.length ? `; added ${installed.join(', ')}` : '; already present'}${removed.length ? `; removed ${removed.join(', ')}` : ''}${raised.length ? `; timeout raised to 10 s on ${raised.join(', ')}` : ''}; advisor agent ${report.claude.advisorAgent})`);
     } catch (err) {
       report.claude.dashclawGuard = false;
       report.claude.secretGuard = false;

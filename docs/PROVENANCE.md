@@ -13,7 +13,7 @@ Files that entered this repository during the 2026-09-19 consolidation, with the
 | `engine/hooks/creds-resolve.cjs` | `claude-config:hooks/creds-resolve.cjs` | 968080e |
 | `engine/hooks/declick-nudge.cjs` | `claude-config:hooks/declick-nudge.cjs` | 968080e |
 | `engine/hooks/dev-server-guard.cjs` | `claude-config:hooks/dev-server-guard.cjs` | 968080e |
-| `engine/hooks/forced-verify-stop-gate.cjs` | `claude-config:hooks/forced-verify-stop-gate.cjs` | 968080e |
+| `engine/hooks/turn-close.cjs` | new in agnostic-ai 2026-11-09 (replaces forced-verify-stop-gate.cjs) | - |
 | `engine/hooks/gate-freeze.cjs` | `claude-config:hooks/gate-freeze.cjs` | 968080e |
 | `engine/hooks/git-tree-guard.cjs` | `claude-config:hooks/git-tree-guard.cjs` | 968080e |
 | `engine/hooks/mods-liveness.cjs` | `claude-config:hooks/mods-liveness.cjs` | 968080e |

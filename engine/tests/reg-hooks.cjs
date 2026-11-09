@@ -516,7 +516,7 @@ async function run() {
     assert.strictEqual(om.main({ hook_event_name: 'UserPromptSubmit', session_id: 'om1', cwd: ROOT, prompt: 'go', transcript_path: 'x.jsonl' }, { env: { CLAUDE_CODE_ENTRYPOINT: 'sdk-cli' } }), '', 'a non-cli entrypoint must stay silent');
   });
 
-  await test('FirstRun: wires opening-move into SessionStart exactly once (startup|clear|compact, timeout 5)', () => {
+  await test('FirstRun: wires opening-move into SessionStart exactly once (startup|clear|compact, timeout 10)', () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'agnostic-reg-claude-opening-'));
     fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
     const settings = path.join(home, '.claude', 'settings.json');
@@ -531,12 +531,39 @@ async function run() {
     const g = groups('SessionStart')[0];
     assert.strictEqual(g.matcher, 'startup|clear|compact');
     assert.strictEqual(g.hooks.length, 1);
-    assert.strictEqual(g.hooks[0].timeout, 5);
+    assert.strictEqual(g.hooks[0].timeout, 10);
     assert.ok(/engine\/hooks\/opening-move\.cjs"$/.test(g.hooks[0].command), g.hooks[0].command);
     for (const event of ['UserPromptSubmit', 'PreToolUse', 'Stop']) assert.strictEqual(groups(event).length, 0, `${event} must not spawn opening-move (the CHAIN runs it)`);
   });
 
-  await test('FirstRun: on settings already guarded by secret-guard.cjs and dashclaw_pretool.py, adds only opening-move and keeps the trailing newline', () => {
+  await test('FirstRun: wires turn-close into Stop exactly once (timeout 10, synchronous) and drops forced-verify-stop-gate', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'agnostic-reg-claude-turnclose-'));
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    const settings = path.join(home, '.claude', 'settings.json');
+    const dead = { type: 'command', command: 'node "C:/Users/x/.claude/hooks/forced-verify-stop-gate.cjs"', timeout: 15 };
+    const sound = { type: 'command', command: 'powershell -NoProfile -Command "beep"', async: true };
+    fs.writeFileSync(settings, JSON.stringify({ hooks: { Stop: [{ hooks: [sound, dead] }, { hooks: [dead] }] } }, null, 2), 'utf8');
+
+    firstRun.wireAgentHooks(home);
+    firstRun.wireAgentHooks(home); // idempotent
+
+    const after = JSON.parse(fs.readFileSync(settings, 'utf8'));
+    const cmds = (event) => (after.hooks[event] || []).flatMap(g => (g.hooks || []).map(h => h.command || ''));
+    assert.strictEqual(cmds('Stop').filter(c => /turn-close/.test(c)).length, 1, 'Stop must hold exactly one turn-close command');
+    assert.strictEqual(cmds('Stop').filter(c => /forced-verify-stop-gate/.test(c)).length, 0, 'forced-verify-stop-gate must be gone from Stop');
+    const g = after.hooks.Stop.find(x => (x.hooks || []).some(h => /turn-close/.test(h.command || '')));
+    assert.strictEqual(g.hooks.length, 1);
+    assert.strictEqual(g.hooks[0].timeout, 10);
+    assert.ok(!g.hooks[0].async, 'turn-close must run synchronously: enforce mode returns a decision');
+    assert.ok(/engine\/hooks\/turn-close\.cjs"$/.test(g.hooks[0].command), g.hooks[0].command);
+    assert.deepStrictEqual(after.hooks.Stop[0].hooks, [sound], 'a group that also held another hook keeps it');
+    assert.strictEqual(after.hooks.Stop.length, 2, 'the group left empty by the drop goes: ' + JSON.stringify(after.hooks.Stop));
+    for (const event of ['UserPromptSubmit', 'PreToolUse', 'SessionStart']) assert.strictEqual(cmds(event).filter(c => /turn-close/.test(c)).length, 0, `${event} must not spawn turn-close`);
+    assert.ok(!fs.existsSync(path.join(ROOT, 'engine', 'hooks', 'forced-verify-stop-gate.cjs')), 'the dead gate must be deleted, not only unwired (doctor orphan-hooks)');
+    assert.ok(fs.existsSync(path.join(ROOT, 'engine', 'hooks', 'turn-close.cjs')), 'turn-close.cjs must exist where the command points');
+  });
+
+  await test('FirstRun: on settings already guarded by secret-guard.cjs and dashclaw_pretool.py, adds only opening-move and turn-close and keeps the trailing newline', () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'agnostic-reg-claude-live-'));
     fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
     const settings = path.join(home, '.claude', 'settings.json');
@@ -566,7 +593,31 @@ async function run() {
     assert.ok(!cmds('PreToolUse').some(c => /dashclaw-guard|secret-path-guard/.test(c)), 'a native guard must not be wired twice');
     assert.strictEqual(after.hooks.SessionStart.length, 2, 'SessionStart gains exactly the opening-move group');
     assert.strictEqual(cmds('SessionStart').filter(c => /opening-move/.test(c)).length, 1);
+    assert.strictEqual(after.hooks.Stop.length, 1, 'Stop gains exactly the turn-close group');
+    assert.strictEqual(cmds('Stop').filter(c => /turn-close/.test(c)).length, 1);
     assert.ok(text.endsWith('}\n'), 'settings.json must keep its trailing newline');
+  });
+
+  await test('FirstRun: raises an existing opening-move or turn-close timeout under 10 s to 10, leaves 30 s, no timeout and other hooks alone', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'agnostic-reg-claude-raise-'));
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    const settings = path.join(home, '.claude', 'settings.json');
+    const hook = (command, timeout) => ({ type: 'command', command, ...(timeout ? { timeout } : {}) });
+    fs.writeFileSync(settings, JSON.stringify({ hooks: {
+      SessionStart: [{ matcher: 'startup|clear|compact', hooks: [hook('node "C:/x/engine/hooks/opening-move.cjs"', 5)] }, { hooks: [hook('node "C:/x/session-count.cjs"', 5)] }],
+      Stop: [{ hooks: [hook('node "C:/x/engine/hooks/turn-close.cjs"', 5)] }, { hooks: [hook('node "C:/x/other-stop.cjs"', 3), hook('node "C:/x/turn-close-extra.cjs"', 30), hook('node "C:/x/turn-close-default.cjs"')] }]
+    } }, null, 2) + '\n', 'utf8');
+
+    firstRun.wireAgentHooks(home);
+
+    const after = JSON.parse(fs.readFileSync(settings, 'utf8'));
+    const timeoutOf = (event, re) => (after.hooks[event] || []).flatMap(g => g.hooks || []).filter(h => re.test(h.command || '')).map(h => h.timeout);
+    assert.deepStrictEqual(timeoutOf('SessionStart', /opening-move/), [10], 'opening-move at 5 s is raised to 10');
+    assert.deepStrictEqual(timeoutOf('Stop', /turn-close\.cjs/), [10], 'turn-close at 5 s is raised to 10');
+    assert.deepStrictEqual(timeoutOf('Stop', /turn-close-extra/), [30], 'a timeout already at 10 s or more is kept');
+    assert.deepStrictEqual(timeoutOf('Stop', /turn-close-default/), [undefined], 'no timeout (the 60 s default) stays absent');
+    assert.deepStrictEqual(timeoutOf('SessionStart', /session-count/), [5], 'another SessionStart hook keeps its timeout');
+    assert.deepStrictEqual(timeoutOf('Stop', /other-stop/), [3], 'another Stop hook keeps its timeout');
   });
 
   // --- 9. capability-graph-guard: delegation flows downward only ---------------

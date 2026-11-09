@@ -481,8 +481,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"C:/Users/sandm/.claude/hooks/forced-verify-stop-gate.cjs\"",
-            "timeout": 5
+            "command": "node \"C:/Users/sandm/.claude/hooks/turn-close.cjs\"",
+            "timeout": 10
           }
         ]
       }
