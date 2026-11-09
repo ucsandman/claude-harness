@@ -50,5 +50,31 @@ for (const [name, expect, script] of CASES) {
   if (!pass) fails++;
   console.log(`${pass ? 'PASS' : 'FAIL'}  ${name.padEnd(46)} expect=${expect.padEnd(5)} got=${got}`);
 }
-console.log(`\n${CASES.length - fails} passed / ${fails} failed`);
+
+// Saved workflows are guard targets too (2026-11-08: a regex byte denied the saved
+// tournament for weeks while every synthetic case passed). Each must pass this guard
+// as a script, and every agent() site must carry a `# EST:` tag for the budget guard.
+const fs = require('fs');
+const path = require('path');
+const WF_DIR = path.join(__dirname, '..', '..', '..', 'workflows');
+const saved = fs.existsSync(WF_DIR) ? fs.readdirSync(WF_DIR).filter((f) => f.endsWith('.js')) : [];
+for (const f of saved) {
+  const file = path.join(WF_DIR, f);
+  const src = fs.readFileSync(file, 'utf8');
+  const r = spawnSync('node', [HOOK], {
+    input: JSON.stringify({ tool_name: 'Workflow', tool_input: { scriptPath: file } }),
+    encoding: 'utf8',
+  });
+  const out = (r.stdout || '').trim();
+  let got = 'ALLOW';
+  if (out) { try { got = JSON.parse(out).hookSpecificOutput.permissionDecision.toUpperCase(); } catch { got = out.slice(0, 50); } }
+  const sites = (src.match(/\bagent\s*\(/g) || []).length;
+  const tags = (src.match(/#\s*EST\s*:/g) || []).length;
+  const pass = got === 'ALLOW' && tags >= sites;
+  if (!pass) fails++;
+  console.log(`${pass ? 'PASS' : 'FAIL'}  saved workflow ${f.padEnd(31)} guard=${got.padEnd(5)} EST tags ${tags}/${sites} agent() sites`);
+}
+
+const total = CASES.length + saved.length;
+console.log(`\n${total - fails} passed / ${fails} failed (${CASES.length} cases, ${saved.length} saved workflows)`);
 process.exit(fails ? 1 : 0);
