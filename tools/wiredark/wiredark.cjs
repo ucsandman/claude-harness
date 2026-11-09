@@ -94,7 +94,8 @@ function references(name, definingFile, staged) {
   } catch (e) { if (e.status === 1) return { prod: 0, reexport: 0, self: 0 }; throw e; }
   const r = { prod: 0, reexport: 0, self: 0 };
   for (const h of hits.split('\n')) {
-    const m = /^([^:]+):(\d+):(.*)$/.exec(h);
+    // CRLF files: git grep keeps the \r on each hit and `.` never matches it, so every line of such a file was skipped.
+    const m = /^([^:]+):(\d+):(.*)$/.exec(h.replace(/\r+$/, ''));
     if (!m) continue;
     const [, file, , line] = m;
     if (TEST_PATH.test(file) || DECL_ONLY.test(file) || COMMENT_LINE.test(line)) continue;

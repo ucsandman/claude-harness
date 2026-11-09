@@ -8,7 +8,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const TOOL = path.join(__dirname, '..', '..', 'tools', 'wiredark', 'wiredark.cjs');
+// engine/hooks/tests -> repo root -> tools/ (the tool moved to the repo root in the 2026-09-19 consolidation).
+const TOOL = path.join(__dirname, '..', '..', '..', 'tools', 'wiredark', 'wiredark.cjs');
 const ROOT = fs.mkdtempSync(path.join(process.env.CLAUDE_SCRATCHPAD || os.tmpdir(), 'wiredark-probe-'));
 const git = (...a) => spawnSync('git', a, { cwd: ROOT, encoding: 'utf8' });
 git('init', '-q'); git('config', 'user.email', 'probe@local'); git('config', 'user.name', 'probe');
@@ -24,6 +25,8 @@ const CASES = [
   // [label, files to write, want exit, want verdict for the named symbol]
   ['dark fn with only a test caller', { 'src/a.ts': 'export function foo() { return 1; }\n', 'tests/a.test.ts': "import { foo } from '../src/a';\ntest('x', () => foo());\n" }, 1, ['foo', 'DARK']],
   ['wired by a production import', { 'src/a.ts': 'export function foo() { return 1; }\n', 'src/b.ts': "import { foo } from './a';\nconsole.log(foo());\n" }, 0, ['foo', 'WIRED']],
+  // -text keeps the CRs in the index (a file with stray \r\r\n is stored this way); git grep then returns hits ending in \r.
+  ['wired by a CRLF production file', { '.gitattributes': 'src/b.ts -text\n', 'src/a.ts': 'export function foo() { return 1; }\n', 'src/b.ts': 'import { foo } from "./a";\r\nconsole.log(foo());\r\n' }, 0, ['foo', 'WIRED']],
   ['registered dark via marker', { 'src/c.ts': '// WIRE-DARK[probe: consumer lands in step 2]\nexport function bar() { return 2; }\n' }, 0, ['bar', 'REGISTERED-DARK']],
   ['barrel re-export only', { 'src/d.ts': 'export function baz() { return 3; }\n', 'src/index.ts': "export { baz } from './d';\n" }, 0, ['baz', 'REEXPORTED']],
   ['same-file helper', { 'src/e.ts': 'export function helper() { return 4; }\nconsole.log(helper());\n' }, 0, ['helper', 'INTERNAL']],
