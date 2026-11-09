@@ -58,9 +58,9 @@ const RESULT_CODES = {
   1: 'generic failure (0x1)',
   2: 'file not found (0x2)',
   10: 'environment incorrect (0xa)',
-  266496: 'ready — waiting for next run (0x41300)',
-  266497: 'running (0x41301)',
-  266498: 'disabled — will not run (0x41302)',
+  267008: 'ready — waiting for next run (0x41300)',
+  267009: 'running (0x41301)',
+  267010: 'disabled — will not run (0x41302)',
   267011: 'never run (0x41303)',
   267012: 'no more scheduled runs (0x41304)',
   267014: 'terminated by user (0x41306)',
@@ -158,13 +158,16 @@ function parseTasks(stdout) {
     let classification;
     if (raw.State === 'Disabled') {
       classification = 'DISABLED';
-    } else if (resultCode === 266497) {
-      // 0x41301: the task is running right now — status, not failure.
+    } else if (raw.State === 'Running' || resultCode === 267009) {
+      // 0x41301 (267009, not 266497 = 0x41101) or State=Running: the task is
+      // running right now — status, not failure. A daemon under IgnoreNew
+      // keeps State=Running while its keepalive trigger reports 0x800710E0
+      // ("request refused", the new instance was not started); still running.
       classification = 'RUNNING';
     } else if (resultCode === 267011) {
       // 0x41303: never fired yet — neutral, not a red row.
       classification = 'NEVER-RUN';
-    } else if (resultCode !== 0 && resultCode !== 266496) {
+    } else if (resultCode !== 0 && resultCode !== 267008) {
       // 0x41300 "ready — waiting for next run" is also status, not failure.
       classification = 'FAILED';
     } else {
@@ -437,13 +440,33 @@ function main() {
   // Result is meaningful once it runs on a schedule. Without this it always
   // exited 0 and the silent-failure detector was itself silent — which is how
   // "DashClaw Traffic Poll" failed ~40 mornings unseen.
-  const broken = shown.filter((t) => t.classification === 'FAILED').length;
-  if (broken > 0) {
-    console.error(`[cronwatch] ${broken} scheduled task(s) FAILED — see ${OUT_HTML}`);
+  const broken = verdictTasks(shown);
+  const failedRows = shown.filter((t) => t.classification === 'FAILED').length;
+  const ignored = failedRows - broken.length;
+  const tail = ignored > 0 ? ` (${ignored} more FAILED row(s) not counted: Microsoft's own tasks and this board)` : '';
+  if (broken.length > 0) {
+    console.error(`[cronwatch] ${broken.length} of ${shown.length} scheduled task(s) FAILED${tail} — see ${OUT_HTML}`);
     process.exit(1);
   }
 
+  console.error(`[cronwatch] 0 of ${shown.length} scheduled task(s) FAILED${tail}`);
   process.exit(0);
 }
 
-main();
+// The FAILED rows that decide the exit code. Every row still renders; this
+// drops the two kinds that would keep the verdict red forever: Windows' own
+// housekeeping under \Microsoft\ (the operator cannot fix "Windows Defender
+// Scheduled Scan: file not found"), and this board itself, whose last result
+// is 1 precisely because yesterday's board was red.
+function verdictTasks(tasks) {
+  return tasks.filter(
+    (t) =>
+      t.classification === 'FAILED' &&
+      !/^\\Microsoft\\/i.test(t.taskPath) &&
+      !/cronwatch\.cjs/i.test(t.actionText)
+  );
+}
+
+module.exports = { parseTasks, verdictTasks, decodeResult };
+
+if (require.main === module) main();

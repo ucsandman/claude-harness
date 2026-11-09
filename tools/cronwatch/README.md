@@ -18,11 +18,19 @@ node cronwatch.cjs --open             # also open cronwatch.html in the default 
 Output: `cronwatch.html` in this directory (generated — do not hand-edit,
 see `.gitignore`).
 
-Exit code: `0` on a normal run, however many tasks are FAILED/STALE — a
-board full of red rows is still a successful board. `1` only if the
-Task Scheduler query itself fails (PowerShell not found, the query errors,
-or its JSON can't be parsed); that failure prints the real stderr, never
-an empty board pretending health.
+Exit code: `1` when the board has a FAILED row that is yours, so the
+`CronwatchDaily` task's own Last Result is a verdict (the Opening Move
+reads it: "board lists failed tasks"). Two kinds of FAILED row render but
+do not count: Windows' own housekeeping under `\Microsoft\` (nobody fixes
+"Windows Defender Scheduled Scan: file not found"), and this board itself
+(its last result is 1 whenever yesterday's board was red). STALE rows
+never count. `1` also if the Task Scheduler query itself fails
+(PowerShell not found, the query errors, or its JSON can't be parsed);
+that failure prints the real stderr, never an empty board pretending
+health. Stderr always carries the count: `N of M scheduled task(s) FAILED`.
+
+Probe: `node tools/cronwatch/tests/cronwatch-probe.cjs` (fixtures, no
+Task Scheduler).
 
 ## Default filter
 
@@ -58,8 +66,11 @@ sentinel date.
 
 - **OK** — `LastTaskResult` is `0`, or `0x41300` (ready, waiting for its
   next run — scheduler status, not a failure).
-- **RUNNING** — `0x41301`, the task is mid-run at query time. Blue badge,
-  not red: querying during a run is not a failure.
+- **RUNNING** — `0x41301` (decimal 267009), or task `State` is `Running`:
+  the task is mid-run at query time. Blue badge, not red: querying during a
+  run is not a failure. The `State` check also covers a daemon registered
+  with "do not start a new instance" whose keepalive trigger reports
+  `0x800710E0` (request refused) while the old instance is still running.
 - **NEVER-RUN** — `0x41303`, the task has never fired. Neutral gray: a
   freshly registered task is not broken.
 - **FAILED** — any other nonzero `LastTaskResult`, decoded where the code

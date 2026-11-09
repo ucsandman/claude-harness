@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### 2026-11-09: cronwatch classifies running tasks correctly and its verdict can clear
+
+- `tools/cronwatch/cronwatch.cjs`: the Task Scheduler status constants were
+  off by 512 (266497 for 0x41301; the value is 267009), so every task mid-run
+  rendered as a red `error 0x41301`; fixed, and `State=Running` now
+  classifies as RUNNING, which also covers an IgnoreNew daemon whose
+  keepalive reports 0x800710E0 while the old instance runs. The exit verdict
+  (`verdictTasks`) no longer counts Windows' own tasks under `\Microsoft\` or
+  the board itself, so `CronwatchDaily` exit 1 means a failed task of yours;
+  stderr prints `N of M scheduled task(s) FAILED`. README matches the code.
+  Probe: `tools/cronwatch/tests/cronwatch-probe.cjs` (8 cases).
+
 ### 2026-11-09: Opening Move, the session brief, the Next ledger, the nightly digest and the Today tab
 
 - `engine/hooks/opening-move.cjs` (new, SessionStart + the prompt dispatcher):
