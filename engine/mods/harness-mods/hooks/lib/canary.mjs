@@ -6,7 +6,7 @@
 // liveness hook) reads the written status and applies the same judgement from outside the plugin.
 
 // The order is read from the ADAPTER's next.trace (ToolCompleted.data.trace): it lists the user plugins
-// beneath the adapter, so seeing harness-mods there proves claude-runtime is outermost. The adapter
+// beneath the adapter, so seeing harness-mods there proves harness-runtime is outermost. The adapter
 // never appears in its own trace.
 export const EXPECTED_ORDER = ["harness-mods"];
 export const EXPECTED_SUPPORTS = ["toolInterception", "toolResultMutation", "runtimeEvents", "subagentEvents", "dynamicPermissions", "usageSignals", "contextSignals", "middleware", "runtimeMemory"];
@@ -31,7 +31,7 @@ export function newStatus() {
 /** Grade a status. `modes` are the effective guard modes; `phase` is "start" (probes only) or "live". */
 export function judge(status, modes, phase = "live") {
   const failures = [];
-  if (!status.runtimeNoun) failures.push("adapter-noun-missing: $.runtime is not reachable (claude-runtime did not load or loaded after harness-mods)");
+  if (!status.runtimeNoun) failures.push("adapter-noun-missing: $.runtime is not reachable (harness-runtime did not load or loaded after harness-mods)");
   if (!status.supports) failures.push("capability-probe-missing");
   else for (const k of EXPECTED_SUPPORTS) if (status.supports[k] !== true) failures.push("capability-changed: " + k + "=" + JSON.stringify(status.supports[k]));
   if (!status.usageProbe) failures.push("session-usage-unavailable");
@@ -39,7 +39,7 @@ export function judge(status, modes, phase = "live") {
   if (status.hookErrors > 0) failures.push("hook-failures: " + status.hookErrors + (status.lastError ? " (" + status.lastError + ")" : ""));
   if (phase === "live") {
     if (status.toolCalls > 0 && status.busEvents === 0) failures.push("events-not-flowing: tool calls seen but no runtime.emit events");
-    if (status.order && !sameOrder(status.order, EXPECTED_ORDER)) failures.push("middleware-order: adapter trace shows [" + status.order.join(" > ") + "], expected [" + EXPECTED_ORDER.join(" > ") + "] beneath claude-runtime (is claude-runtime loaded first?)");
+    if (status.order && !sameOrder(status.order, EXPECTED_ORDER)) failures.push("middleware-order: adapter trace shows [" + status.order.join(" > ") + "], expected [" + EXPECTED_ORDER.join(" > ") + "] beneath harness-runtime (is harness-runtime loaded first?)");
     if (status.toolCalls > 0 && !status.enforcementReached.toolCall) failures.push("enforcement-unreachable: tool.call never reached harness-mods");
   }
   const enforcing = Object.keys(modes || {}).filter((g) => modes[g] === "mod");

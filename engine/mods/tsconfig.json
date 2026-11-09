@@ -6,5 +6,5 @@
     "noEmit": true, "skipLibCheck": true, "allowJs": true, "checkJs": false,
     "jsx": "react", "jsxFactory": "h", "jsxFragmentFactory": "Fragment"
   },
-  "include": ["claude-runtime/**/*.ts", "claude-runtime/**/*.d.ts", "harness-mods/**/*.ts", "harness-mods/**/*.tsx", "harness-mods/**/*.mjs"]
+  "include": ["harness-runtime/**/*.ts", "harness-runtime/**/*.d.ts", "harness-mods/**/*.ts", "harness-mods/**/*.tsx", "harness-mods/**/*.mjs"]
 }

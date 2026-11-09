@@ -180,7 +180,7 @@ enters this repository.
 ## Mods
 
 `engine/mods/` holds the function-hook plugins that run inside Claude Code's
-hooks engine with no process spawn: `claude-runtime` (the runtime adapter:
+hooks engine with no process spawn: `harness-runtime` (the runtime adapter:
 events, judgments, snapshots) and `harness-mods` (routing, context nudges,
 secret redaction, subagent accounting, a read cache). `canary.cjs` and
 `shadow-report.cjs` verify them from a classic hook, and

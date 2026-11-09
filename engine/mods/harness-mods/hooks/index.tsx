@@ -1,6 +1,6 @@
 // harness-mods — the harness's Function Hooks layer (hook glue only; policy lives in ./lib/*.mjs).
 //
-//   Claude Code → claude-runtime (adapter, loaded first) → runtime.emit bus + $.runtime.* → THIS
+//   Claude Code → harness-runtime (adapter, loaded first) → runtime.emit bus + $.runtime.* → THIS
 //
 // Raw events hooked here only where the Mod must intercept (agent.spawn, tool.call, prompt.submit);
 // everything observational comes off the bus. Every guard runs in the mode mods-config.json gives it
@@ -337,7 +337,7 @@ export const register = (on, options) => {
       return { text: head + "\n\nROLLBACK (any one of these; classic hooks are still installed and take over immediately):"
         + "\n  per guard, all sessions:  edit " + CONFIG_PATH + " → \"<guard>\": \"classic\""
         + "\n  per session:              HARNESS_MOD_ROUTING=classic (or HARNESS_MODS=off) in the environment"
-        + "\n  whole layer:              claude plugin disable harness-mods@harness-mods   (and claude-runtime@harness-mods)"
+        + "\n  whole layer:              claude plugin disable harness-mods@harness-mods   (and harness-runtime@harness-mods)"
         + "\n  the classic side yields only while sessions/<id>.json says the Mod armed the guard; delete that file and classic enforces." };
     }
     if (arg === "shadow") {

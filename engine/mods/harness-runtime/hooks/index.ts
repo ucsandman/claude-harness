@@ -1,4 +1,4 @@
-// claude-runtime — the ONE adapter between Anthropic's early-access function-hook API and Wes's products.
+// harness-runtime — the ONE adapter between Anthropic's early-access function-hook API and Wes's products.
 // Everything product-facing consumes `runtime.emit` events and `$.runtime.*`; nothing else touches the raw API.
 // If the API changes, this file changes.
 
@@ -119,7 +119,7 @@ async function probeSupports($, e) {
   try { const pol = await $.settings.read({ source: "policy" }); s.classicEvents = Object.keys(pol || {}).length === 0; s.systemPromptRewrite = s.classicEvents; prov.classicEvents = "probed"; prov.systemPromptRewrite = "probed"; } catch (err) {}
   try { const u = await $.session.usage(); s.usageSignals = !!u; s.contextSignals = typeof u.context.window === "number"; prov.usageSignals = "probed"; prov.contextSignals = "probed"; state.lastUsage = u; } catch (err) { s.usageSignals = false; s.contextSignals = false; }
   s.uiInjection = e.surface === "terminal"; prov.uiInjection = "probed";
-  try { await $.store.set("claude-runtime.probe", now()); s.runtimeMemory = true; prov.runtimeMemory = "probed"; } catch (err) { s.runtimeMemory = false; }
+  try { await $.store.set("harness-runtime.probe", now()); s.runtimeMemory = true; prov.runtimeMemory = "probed"; } catch (err) { s.runtimeMemory = false; }
   s.semanticJudgment = state.backend; prov.semanticJudgment = "probed";
   state.supports = s;
 }

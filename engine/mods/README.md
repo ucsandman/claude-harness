@@ -6,7 +6,7 @@ Promoted from the claude-mods research record (now `labs/claude-mods`) on 2026-0
 ```
 mods/
   .claude-plugin/marketplace.json   local marketplace "harness-mods" (extraKnownMarketplaces in settings.json)
-  claude-runtime/                   the shared runtime adapter: the ONE reader of Anthropic's raw
+  harness-runtime/                   the shared runtime adapter: the ONE reader of Anthropic's raw
                                     function-hook events → runtime.emit bus + $.runtime.{emit,supports,judge,snapshot}
                                     + state/events/<session>.jsonl (consumed by LegCli, handoff bundle, Discovery Loop)
   harness-mods/                     the harness Mod: routing, context nudge, secret redaction, measured
@@ -60,11 +60,15 @@ node ~/.claude/hooks/tests/mods-mode-probe.cjs               the classic stand-d
 claude plugin validate ~/.claude/mods/harness-mods --json    the loader's static scan
 ```
 
+## Deploying an edit
+
+An edit under `engine/mods` is live at the next session start (or `/reload-plugins`); no reinstall. Claude Code reads a folder-marketplace plugin from its folder, and `~/.claude/mods` is that folder. The copies under `~/.claude/plugins/cache/harness-mods/<plugin>/<version>/` are dead install-time snapshots: `installPath` in `installed_plugins.json` points at them, `claude plugin update` says "read from its folder, nothing to update", and a `diff -rq` against them measures nothing. Proven 2026-11-08 on 2.1.319: a marker planted only in the cache copy of `canary.mjs` never reached the next session's heartbeat. A manifest change (`plugin.json` name or version) is the one edit that needs `claude plugin marketplace update harness-mods` and an uninstall/reinstall, adapter first so it stays outermost.
+
 ## Rollback (classic hooks are still installed; they take over the moment the Mod stops arming a guard)
 
 - one guard, every session: set it to `"classic"` in `mods-config.json`
 - one session: `HARNESS_MOD_ROUTING=classic` (`_SECRET_REDACTION`, `_SUBAGENT_ACCOUNTING`, `_READ_CACHE`) or `HARNESS_MODS=off`
-- the layer: `claude plugin disable harness-mods@harness-mods` (`claude-runtime@harness-mods` may stay; it only observes)
+- the layer: `claude plugin disable harness-mods@harness-mods` (`harness-runtime@harness-mods` may stay; it only observes)
 - a Claude update: a **minor/major** change (2.1.x to 2.2.x) fails `version` until you re-run `labs/claude-mods/lab/probe*` and repin, because event shapes can move. A **patch** change (2.1.273 to 2.1.274) is a warning, not a failure, provided the in-session capability probe is clean on the installed build: all 9 of `EXPECTED_SUPPORTS` answering true is direct evidence the API the Mod depends on is intact, where the version string is only a proxy for it. Clear a stale pin with `node ~/.claude/mods/canary.cjs --repin`, which refuses unless both the canary and the probe are clean and updates `canary.cjs` and `canary.mjs` together. Changed 2026-09-17: the old exact-match pin went red on every patch release, and a canary that cries wolf gets ignored.
 
 ## Invariants (checked by tests)
@@ -72,4 +76,4 @@ claude plugin validate ~/.claude/mods/harness-mods --json    the loader's static
 - A decision is owned by exactly one side per session: classic yields only under `mod` + a fresh heartbeat that armed the guard.
 - `hooks/lib/secret-patterns.cjs` is the single source of secret shapes; `harness-mods/hooks/lib/secret-patterns.mjs` is a generated copy and the test fails on drift.
 - The Mod never logs a secret value (hits carry kind, 8-char head, length).
-- Only `claude-runtime` reads raw engine events for observation; `harness-mods` hooks raw events only where it must intercept.
+- Only `harness-runtime` reads raw engine events for observation; `harness-mods` hooks raw events only where it must intercept.

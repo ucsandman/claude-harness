@@ -1,5 +1,5 @@
-// Type contract for the `runtime` noun the claude-runtime plugin adds to `$`.
-// Self-contained (no imports); copied by /plugin-types into .claude/types/claude-code-plugins/claude-runtime.d.ts.
+// Type contract for the `runtime` noun the harness-runtime plugin adds to `$`.
+// Self-contained (no imports); copied by /plugin-types into .claude/types/claude-code-plugins/harness-runtime.d.ts.
 
 /** Which runtime capabilities this adapter could verify on this machine at session start. */
 export type RuntimeSupports = {

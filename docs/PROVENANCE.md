@@ -91,7 +91,7 @@ Files that entered this repository during the 2026-09-19 consolidation, with the
 | `labs/claude-mods/prototypes` | `claude-mods-rnd:prototypes` | 210d972 |
 | `labs/claude-mods/lab` | `claude-mods-rnd:lab` | 210d972 |
 | `labs/claude-mods/tools` | `claude-mods-rnd:tools` | 210d972 |
-| `labs/claude-mods/adapter-README.md` | `claude-mods-rnd:adapter/README.md (the adapter itself is engine/mods/claude-runtime)` | 210d972 |
+| `labs/claude-mods/adapter-README.md` | `claude-mods-rnd:adapter/README.md (the adapter itself is engine/mods/harness-runtime)` | 210d972 |
 | `labs/claude-mods/experiments` | `claude-mods-rnd:experiments` | 210d972 |
 | `labs/claude-mods/snapshot` | `claude-mods-rnd:snapshot (declarations and notes only; raw captures dropped)` | 210d972 |
 | `labs/claude-mods/docs` | `claude-mods-rnd:docs` | 210d972 |

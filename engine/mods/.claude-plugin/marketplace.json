@@ -2,12 +2,12 @@
   "name": "harness-mods",
   "owner": { "name": "Wes Sander" },
   "metadata": {
-    "description": "Local marketplace for the harness's Function Hooks (Mods) layer: the shared claude-runtime adapter and the harness-mods consumer."
+    "description": "Local marketplace for the harness's Function Hooks (Mods) layer: the shared harness-runtime adapter and the harness-mods consumer."
   },
   "plugins": [
     {
-      "name": "claude-runtime",
-      "source": "./claude-runtime",
+      "name": "harness-runtime",
+      "source": "./harness-runtime",
       "description": "Shared Claude runtime adapter: the ONE plugin that reads Anthropic's raw function-hook events; publishes normalised ClaudeRuntimeEvents on runtime.emit and $.runtime.{emit,supports,judge,snapshot}.",
       "version": "0.2.0",
       "category": "productivity"

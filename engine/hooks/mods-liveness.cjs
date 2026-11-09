@@ -36,7 +36,7 @@ function main() {
 
   let problem = null;
   if (!hb) problem = 'the Function Hooks layer (harness-mods) wrote no heartbeat for this session: it did not load';
-  else if (hb.runtime !== true) problem = 'harness-mods loaded but the claude-runtime adapter noun is missing (load order or adapter failure)';
+  else if (hb.runtime !== true) problem = 'harness-mods loaded but the harness-runtime adapter noun is missing (load order or adapter failure)';
   else if (hb.canary && hb.canary.ok === false) problem = 'harness-mods loaded unhealthy: ' + (hb.canary.failures || []).join('; ');
   else if (enforcing.some((g) => !(hb.armed && hb.armed[g] === true))) problem = 'guards in mod mode are not armed this session: ' + enforcing.filter((g) => !(hb.armed && hb.armed[g] === true)).join(', ');
 

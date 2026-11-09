@@ -1,5 +1,5 @@
 {
-  "name": "claude-runtime",
+  "name": "harness-runtime",
   "version": "0.2.0",
   "description": "Shared Claude runtime adapter: normalises function-hook events into ClaudeRuntimeEvent, exposes $.runtime (emit bus, supports, judge, snapshot) to other plugins, and writes a JSONL event log",
   "author": {

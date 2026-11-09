@@ -14,7 +14,7 @@ One implementation per capability, one writer per generated file, one dependency
 | Subagents | `agents/*.md` | `~/.claude/agents` is a link; other clients by the port | none |
 | Slash commands | `~/.claude/commands/*.md` (private overlay) | other clients by the port | all of them |
 | Guard hooks | `engine/hooks/*.cjs` (+ `lib/`, `tests/`, `adapters/`) | `~/.claude/hooks` is a link; the frozen set is `tools/gates/gate-manifest.lock.json` (`gates.cjs --lock`) | `settings.json` registrations; extra roots in `overlay/gates.json` |
-| Mods (function hooks) | `engine/mods/{claude-runtime,harness-mods}` | `~/.claude/mods` is a link; heartbeat and events under `~/.claude/mods/state/` | `mods-config.json` modes |
+| Mods (function hooks) | `engine/mods/{harness-runtime,harness-mods}` | `~/.claude/mods` is a link; heartbeat and events under `~/.claude/mods/state/` | `mods-config.json` modes |
 | MCP servers, permissions | `~/.claude.json`, `settings.json` (Claude Code's own) | other clients by the port (a secret-shaped header is never copied) | all of it |
 | Model routing | `core/rules/modules/delegation-and-model-routing.md` + `engine/hooks/agent-model-guard.cjs`, `subagent-budget-guard.cjs` | none | none |
 | Context health, handoffs | `engine/hooks/{compaction-ledger,precompact-extract,opus-handoff-inject}.cjs`; the handoff package is `context-handoff-bundle` (its own repository) | `~/.claude/state/*` | none |

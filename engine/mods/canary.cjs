@@ -8,7 +8,7 @@
  *
  * A silent Mod failure must not look healthy, so every check states what it looked at and how much:
  *   installed     both plugins are in settings.enabledPlugins and the marketplace is registered
- *   validate      `claude plugin validate` passes for claude-runtime and harness-mods (skipped with --quick)
+ *   validate      `claude plugin validate` passes for harness-runtime and harness-mods (skipped with --quick)
  *   version       `claude --version` equals the pinned build the layer was verified on (skipped with --quick)
  *   tests         hooks/lib tests pass (node --test), incl. the secret-pattern drift check (skipped with --quick)
  *   last-session  the newest sessions/<id>.json is recent, reports runtime=true, canary ok, and every
@@ -49,8 +49,8 @@ function run(cmd, cmdArgs, timeout) {
 // installed
 const settings = readJson(path.join(CLAUDE, 'settings.json')) || {};
 const ep = settings.enabledPlugins || {};
-check('installed', ep['claude-runtime@harness-mods'] === true && ep['harness-mods@harness-mods'] === true && !!(settings.extraKnownMarketplaces || {})['harness-mods'],
-  'claude-runtime=' + ep['claude-runtime@harness-mods'] + ' harness-mods=' + ep['harness-mods@harness-mods'] + ' marketplace=' + !!(settings.extraKnownMarketplaces || {})['harness-mods']);
+check('installed', ep['harness-runtime@harness-mods'] === true && ep['harness-mods@harness-mods'] === true && !!(settings.extraKnownMarketplaces || {})['harness-mods'],
+  'harness-runtime=' + ep['harness-runtime@harness-mods'] + ' harness-mods=' + ep['harness-mods@harness-mods'] + ' marketplace=' + !!(settings.extraKnownMarketplaces || {})['harness-mods']);
 
 // config
 const cfg = readJson(path.join(MODS, 'mods-config.json'));
@@ -100,7 +100,7 @@ if (!QUICK) {
                   : 'minor/major change: event shapes may have moved')
       + '; re-run lab/probe* and update RUNTIME_PIN before trusting mod mode');
   }
-  for (const p of ['claude-runtime', 'harness-mods']) {
+  for (const p of ['harness-runtime', 'harness-mods']) {
     const r = run('claude', ['plugin', 'validate', path.join(MODS, p), '--json'], 90000);
     let ok = false; let msg = 'no json';
     try { const j = JSON.parse(r.out.slice(r.out.indexOf('{'))); ok = j.success === true; msg = ok ? 'ok' : JSON.stringify((j.contents || []).flatMap((c) => c.errors || [])).slice(0, 200); } catch (_) { msg = r.out.slice(0, 160); }
