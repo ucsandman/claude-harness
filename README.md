@@ -234,7 +234,7 @@ or a header that says what it does.
 | `cronwatch` | A health board for scheduled jobs that fail silently overnight |
 | `harness-health` | Every settings layer scanned, every hook command optionally probed once |
 | `sync` | The parity matrix per client and component, with check and port-now buttons |
-| `dashboard` | The command center: rules, skills, decisions, the error explorer, maintenance routines, in a browser |
+| `dashboard` | The command center: the Today tab (what the harness found, fixed and will show next, with Mute and Demote), rules, skills, decisions, the error explorer, maintenance routines, in a browser |
 | `errorlog` | Two daily logs: what the agent predicted wrong, and what the human got wrong |
 | `subagent-budget` | Fits the subagent cost constants to measured transcripts |
 | `deskclaw` | A Windows desktop eye and hand: UI trees, screenshots, click, type, key, with redaction and denylists |

@@ -2,6 +2,52 @@
 
 ## Unreleased
 
+### 2026-11-09: Opening Move, the session brief, the Next ledger, the nightly digest and the Today tab
+
+- `engine/hooks/opening-move.cjs` (new, SessionStart + the prompt dispatcher):
+  every cli session opens with one `systemMessage` line and a brief built in
+  under 200 ms from git, the repo's ring of recent sessions, the markers and
+  `digest.json`: what changed since the last session, the reds, and one NEXT
+  with an owner (`me`, `you`, `wait <date>`, `none`) chosen by a 10-rung
+  ladder; "go", "continue", "next", "resume" or a greeting binds the `me`
+  NEXT to that prompt. The hard-stop filter rewrites deploy/publish/send/
+  delete-class text to `prepare <x>; <x> stays yours` and fails closed on
+  path-shaped tokens.
+- `engine/hooks/turn-close.cjs` (new, Stop) replaces the dead
+  `forced-verify-stop-gate.cjs`: parses the reply's closing `Next (<owner>):`
+  line into the repo's `next`, records whether the turn edited code and
+  whether a check passed afterwards (`off | shadow | enforce`; shadow logs,
+  enforce blocks once per human prompt), and writes one `finals.jsonl` row
+  per human-prompt Stop.
+- `jobs/opening-move-digest.cjs` (new; `OpeningMoveDigest` 06:50, or a
+  detached refresh behind `digest.lock` when a brief finds the digest over
+  60 min old): eight sources with counts (doctor, guard canary, job
+  contracts, gitradar repos, ci, hook errors, learning, fixture), three
+  allowlisted T0 repairs (rules-drift, links, install-differs) that never
+  run under a live session or from a harness session, and a 5-fault fixture
+  that proves the instruments on every run.
+- `jobs/install.cjs`: every job that leaves an artifact declares `expects:
+  {path, maxAgeH, resultNote?}`; `npm run doctor` (`jobs`) fails on a stale
+  or missing artifact. First real positive: `NightlyMeditation`, dark 51
+  days under a path-only check, fixed in discovery-loop and seen running
+  again on 2026-11-09.
+- `engine/hooks/guard-canary.ps1`: a red status replays for 60 min unless an
+  input changed; frozen-drift lines and hook-target misses are kept apart.
+- `tools/dashboard`: the command center opens on a Today tab (digest head
+  line, reds with [Mute 7 days], Fixed for you, NEXT kinds with Demote and
+  Restore, verify-gate precision, Next-line coverage, the `config.json`
+  toggles) over `GET /api/opening-move` and `POST mute | settings | refresh`
+  behind the session header, a loopback Origin and a loopback Host. A
+  guard-class red never mutes; a key naming an `Object.prototype` member is
+  400; a POST on a file it cannot parse is 409.
+- `core/rules/global-rules.md`: ADHD rule 3 ends every reply with `Next
+  (me|you|wait YYYY-MM-DD|none): …`; the "Opening move" How to Work bullet.
+- Docs: `docs/opening-move.md` (new, the reference), `docs/configuration.md`
+  (the jobs and their contracts), `docs/guards.md`, README, `docs/ERRORS.md`
+  (three entries). Probes: `opening-move-probe.cjs` (22 cases, 39 negatives,
+  `--stub`, `--leaky`), `turn-close-probe.cjs` (20), `opening-move-digest-
+  probe.cjs` (14), `tools/dashboard/tests/today-probe.cjs` (13); reg-hooks 81.
+
 ### 2026-11-08: the distillation ladder refuses moves it has no edge for
 
 - `engine/distill/ladder.cjs` (new): the candidate lifecycle as one table
