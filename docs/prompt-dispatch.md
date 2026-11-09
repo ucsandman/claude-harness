@@ -10,7 +10,7 @@ context:
 
 UserPromptSubmit is ONE registered command, `prompt-dispatch.cjs`, timeout 30 s.
 It reads the payload once and runs every prompt hook in-process (its `CHAIN`:
-wakeup-guard, scope-lock, opus-handoff-inject, correction-tracker,
+wakeup-guard, opening-move, scope-lock, opus-handoff-inject, correction-tracker,
 repeat-tool-guard --reset, fable-delegate-guard, mods-liveness, context-graph),
 intercepting fd 0, stdout and `process.exit` around each require, then merges
 the answers: additionalContext joined in chain order, the first `decision: block`
@@ -34,4 +34,21 @@ wake-ups in 45 min, each answered "Waiting.", 1.4M tokens on a workflow at 0 of
 12. No override marker: it only speaks, it never blocks. `context-graph.cjs`
 also skips `<task-notification>` prompts now. Probe:
 `engine/hooks/tests/prompt-dispatch-probe.cjs`.
+
+`opening-move.cjs` (2026-11-09, second in the chain, `exportedMain`) is the
+prompt half of the Opening Move brief; its SessionStart half is the same file,
+registered on `startup|clear|compact`. On a human prompt from a `cli` session
+it writes one ring row per session to
+`~/.claude/state/opening-move/repos/<key>.json` (newest first, at most 5; a
+sibling row under 10 minutes old is what the brief calls LIVE SIBLING), then
+binds "go": on the session's first prompt, a WHOLE prompt of go, go ahead,
+continue, next, resume, do it, yes, ok, start, what's next, hi, hey or morning
+injects the NEXT the brief showed, once. A `me` NEXT is started, a `you` NEXT
+(any hard stop) is only prepared; "thoughts?" or "go through the logs" never
+bind. A stored Next line is injected at most 160 characters long, with its
+double quotes turned into `'` and a closing clause saying it is the last
+session's line, not Wes's words. Machine turns, other entrypoints and
+`OPENING_MOVE=off` return nothing. Probe:
+`engine/hooks/tests/opening-move-probe.cjs` (`--stub` must fail every case,
+`--leaky` must fail every negative).
 

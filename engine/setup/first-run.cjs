@@ -126,10 +126,12 @@ function wireAgentHooks(home = HOME) {
       const matcher = 'Bash|PowerShell|Edit|Write|MultiEdit';
       const installed = [];
       for (const [script, pattern, status] of [
-        ['dashclaw-guard.cjs', /dashclaw-guard/i, 'DashClaw guard check...'],
-        ['secret-path-guard.cjs', /secret-path-guard/i, 'Secret scan...']
+        ['dashclaw-guard.cjs', /dashclaw[-_](?:guard|pretool)/i, 'DashClaw guard check...'],
+        ['secret-path-guard.cjs', /secret(?:-path)?-guard/i, 'Secret scan...']
       ]) {
-        // Skip if this guard already gates tool calls (ours or a native one).
+        // Skip if this guard already gates tool calls (ours or a native one: DashClaw's own
+        // dashclaw_pretool.py, or secret-guard.cjs, the name reg-hooks and the Codex/Gemini
+        // detection below already accept as the secret guard).
         const guarded = cfg.hooks.PreToolUse.some(g =>
           (g.hooks || []).some(h => pattern.test(h.command || '')));
         if (!guarded) {
@@ -172,6 +174,15 @@ function wireAgentHooks(home = HOME) {
       }
       report.claude.delegateGuard = true;
 
+      // opening-move briefs a new session (startup, /clear, compact; a resume already
+      // had its brief). Its UserPromptSubmit half runs inside prompt-dispatch's CHAIN.
+      const hasOpening = (groups) =>
+        (groups || []).some(g => (g.hooks || []).some(h => /opening-move/i.test(h.command || '')));
+      if (!hasOpening(cfg.hooks.SessionStart)) {
+        cfg.hooks.SessionStart.push({ matcher: 'startup|clear|compact', hooks: [{ type: 'command', command: hookCommand('opening-move.cjs'), timeout: 5 }] });
+        installed.push('opening-move.cjs');
+      }
+
       // capability-graph-guard gates the delegation edges themselves, and needs
       // SubagentStart to learn each subagent's model (no other event carries it).
       const graphCommand = hookCommand('capability-graph-guard.cjs');
@@ -204,7 +215,7 @@ function wireAgentHooks(home = HOME) {
       }
 
       if (fs.existsSync(claudeSettings)) backup(claudeSettings); else fs.mkdirSync(path.dirname(claudeSettings), { recursive: true });
-      fs.writeFileSync(claudeSettings, JSON.stringify(cfg, null, 2), 'utf8');
+      fs.writeFileSync(claudeSettings, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
       console.log(`  ✓ Claude Code hooks in ~/.claude/settings.json (dashclaw-guard + secret-guard + fable-delegate-guard + capability-graph-guard${installed.length ? `; added ${installed.join(', ')}` : '; already present'}; advisor agent ${report.claude.advisorAgent})`);
     } catch (err) {
       report.claude.dashclawGuard = false;

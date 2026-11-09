@@ -502,6 +502,73 @@ async function run() {
     assert.strictEqual(report.claude.delegateGuard, true, 'report must state the delegate guard was installed');
   });
 
+  // --- 8b. opening-move: the SessionStart brief once, its prompt half in the dispatcher CHAIN ---
+
+  await test('OpeningMove: rides second in the prompt-dispatch CHAIN, right after wakeup-guard, via exportedMain', () => {
+    const dispatch = require('../hooks/prompt-dispatch.cjs');
+    const names = dispatch.CHAIN.map(e => e.file);
+    assert.strictEqual(names[0], 'wakeup-guard.cjs', names.join(', '));
+    assert.strictEqual(names[1], 'opening-move.cjs', names.join(', '));
+    assert.strictEqual(names.filter(n => n === 'opening-move.cjs').length, 1, 'opening-move must appear once');
+    assert.strictEqual(dispatch.CHAIN[1].exportedMain, true, 'opening-move must run through its exported main');
+    const om = require('../hooks/opening-move.cjs');
+    for (const k of ['main', 'rank', 'HARD_STOP_RE', 'STATE_DIR']) assert.ok(om[k], `opening-move must export ${k}`);
+    assert.strictEqual(om.main({ hook_event_name: 'UserPromptSubmit', session_id: 'om1', cwd: ROOT, prompt: 'go', transcript_path: 'x.jsonl' }, { env: { CLAUDE_CODE_ENTRYPOINT: 'sdk-cli' } }), '', 'a non-cli entrypoint must stay silent');
+  });
+
+  await test('FirstRun: wires opening-move into SessionStart exactly once (startup|clear|compact, timeout 5)', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'agnostic-reg-claude-opening-'));
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    const settings = path.join(home, '.claude', 'settings.json');
+    fs.writeFileSync(settings, JSON.stringify({ model: 'opus' }, null, 2), 'utf8');
+
+    firstRun.wireAgentHooks(home);
+    firstRun.wireAgentHooks(home); // idempotent
+
+    const after = JSON.parse(fs.readFileSync(settings, 'utf8'));
+    const groups = (event) => (after.hooks[event] || []).filter(g => (g.hooks || []).some(h => /opening-move/.test(h.command || '')));
+    assert.strictEqual(groups('SessionStart').length, 1, 'SessionStart must hold exactly one opening-move group');
+    const g = groups('SessionStart')[0];
+    assert.strictEqual(g.matcher, 'startup|clear|compact');
+    assert.strictEqual(g.hooks.length, 1);
+    assert.strictEqual(g.hooks[0].timeout, 5);
+    assert.ok(/engine\/hooks\/opening-move\.cjs"$/.test(g.hooks[0].command), g.hooks[0].command);
+    for (const event of ['UserPromptSubmit', 'PreToolUse', 'Stop']) assert.strictEqual(groups(event).length, 0, `${event} must not spawn opening-move (the CHAIN runs it)`);
+  });
+
+  await test('FirstRun: on settings already guarded by secret-guard.cjs and dashclaw_pretool.py, adds only opening-move and keeps the trailing newline', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'agnostic-reg-claude-live-'));
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    const settings = path.join(home, '.claude', 'settings.json');
+    const cmd = (c) => ({ hooks: [{ type: 'command', command: c }] });
+    const live = { hooks: {
+      PreToolUse: [
+        { matcher: 'Write|Edit|MultiEdit|Bash|PowerShell', ...cmd('node "C:/Users/x/.claude/hooks/secret-guard.cjs"') },
+        { matcher: 'Agent|Task|Bash|PowerShell|Edit|Write|MultiEdit|mcp__.*', ...cmd('python "C:/Projects/DashClaw/hooks/dashclaw_pretool.py" --agent-id claude-code') },
+        { matcher: 'Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell', ...cmd('node "C:/x/fable-delegate-guard.cjs"') },
+        { matcher: 'Agent|Task|Workflow', ...cmd('node "C:/x/capability-graph-guard.cjs"') }
+      ],
+      UserPromptSubmit: [cmd('node "C:/x/prompt-dispatch.cjs"')],
+      SessionStart: [cmd('node "C:/x/fable-delegate-guard.cjs"')],
+      SubagentStart: [cmd('node "C:/x/capability-graph-guard.cjs"')],
+      SubagentStop: [cmd('node "C:/x/capability-graph-guard.cjs"')]
+    } };
+    fs.writeFileSync(settings, JSON.stringify(live, null, 2) + '\n', 'utf8');
+    fs.mkdirSync(path.join(home, '.claude', 'agents'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.claude', 'agents', 'advisor.md'), 'kept\n');
+
+    firstRun.wireAgentHooks(home);
+
+    const text = fs.readFileSync(settings, 'utf8');
+    const after = JSON.parse(text);
+    const cmds = (event) => (after.hooks[event] || []).flatMap(g => (g.hooks || []).map(h => h.command || ''));
+    assert.strictEqual(after.hooks.PreToolUse.length, 4, `PreToolUse must stay at 4 groups: ${JSON.stringify(cmds('PreToolUse'))}`);
+    assert.ok(!cmds('PreToolUse').some(c => /dashclaw-guard|secret-path-guard/.test(c)), 'a native guard must not be wired twice');
+    assert.strictEqual(after.hooks.SessionStart.length, 2, 'SessionStart gains exactly the opening-move group');
+    assert.strictEqual(cmds('SessionStart').filter(c => /opening-move/.test(c)).length, 1);
+    assert.ok(text.endsWith('}\n'), 'settings.json must keep its trailing newline');
+  });
+
   // --- 9. capability-graph-guard: delegation flows downward only ---------------
 
   function graphEnv() {
