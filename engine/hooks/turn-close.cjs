@@ -21,6 +21,9 @@
  *             off: nothing. shadow: one row in turn-close.jsonl. enforce: a Stop block,
  *             at most once per human prompt (prompt_id when the bus has none), never
  *             while stop_hook_active.
+ *   finals    one row {ts, session, repo, hasNext, owner} in finals.jsonl (90 days) per Stop
+ *             that closes a turn a human prompt opened (the bus's newest main-thread prompt),
+ *             unless it blocks; the dashboard Today tab reads it as Next-line coverage.
  * Stdout is empty except for the enforce block; exit is always 0. The only bus-derived
  * string that can reach stdout is the last edited file's basename inside that block.
  * Each run's counts ("bus: <n> events scanned ...") go to turn-close-last.json.
@@ -42,6 +45,7 @@ const P = {
   mutes: path.join(STATE_DIR, 'mutes.json'),
   config: path.join(STATE_DIR, 'config.json'),
   turnClose: path.join(STATE_DIR, 'turn-close.jsonl'),
+  finals: path.join(STATE_DIR, 'finals.jsonl'),
   last: path.join(STATE_DIR, 'turn-close-last.json'),
 };
 const BUS_DIR = path.join(HOME, '.claude', 'mods', 'state', 'events');
@@ -315,6 +319,15 @@ function autoQuiet(sid, events, nowIso, repo) {
   return true;
 }
 
+/** finals.jsonl past 1 MB keeps its last 90 days, the way opening-move.cjs trims ledger.jsonl. */
+function trimFinals(now) {
+  try {
+    if (fs.statSync(P.finals).size < 1024 * KB) return;
+    const keep = jsonl(readText(P.finals)).filter((r) => now - Date.parse(r.ts) < 90 * 24 * 3600e3);
+    fs.writeFileSync(P.finals, keep.map((r) => JSON.stringify(r)).join('\n') + (keep.length ? '\n' : ''));
+  } catch (_) {}
+}
+
 function trimTurnClose() {
   try {
     if (fs.statSync(P.turnClose).size < 1024 * KB) return;
@@ -448,6 +461,15 @@ function close(evt, opts = {}) {
       const reason = `[turn-close] You edited ${pl(n, 'code file')} after your last passing check (${ev.lastPass ? ev.lastPass.label : 'none'}). Run the narrowest test that exercises ${baseName(ev.lastEdit.path)}, read the output, then finish.`;
       out = JSON.stringify({ decision: 'block', reason });
     }
+  }
+
+  // 6. finals: a Stop whose turn a human prompt opened (a task notification or auto-continuation
+  // after it is a machine wake-up) and that does not block is the turn's final message.
+  const lastPrompt = bus.status === 'ok' ? [...bus.events].reverse().find((e) => e.kind === 'PromptSubmitted' && !e.agentId) : null;
+  info.final = !!(lastPrompt && isHumanPrompt(lastPrompt) && verdict !== 'block');
+  if (info.final) {
+    appendLine(P.finals, { ts: nowIso, session: sid, repo: primary ? primary.key : null, hasNext: !!nx, owner: nx ? nx.owner : null });
+    trimFinals(now);
   }
   const r = done(out);
   info.line = `[turn-close] mode ${info.mode}: ${bus.note}${ev ? `, ${ev.windowSize} in this turn` : ''}; ${ev ? `${pl(ev.codeFiles, 'code file')} edited, ${pl(ev.checksInWin.length, 'check')} run (${ev.passAfterEdit} passing after the last edit)` : 'edits and checks: unknown'}; verdict ${verdict}; next ${info.next}${primary ? ` -> ${primary.key}` : ''}; ${pl(touched.size, 'repo')} touched; ${info.ms} ms`;

@@ -117,6 +117,18 @@ lines and hook-target misses are kept apart, so drift never reads as a missing
 hook. The MODS line prints only when the session's cwd is this repository or
 `~/.claude`.
 
+## Today tab (`tools/dashboard/dashboard.cjs`)
+
+`npm run dashboard` opens on it: digest sources and fixture; reds with [Mute 7
+days] (`mutes.json` items `{hash: until}`; the brief omits them, its rules
+line ending `; <n> muted`; a guard-class red never mutes); repairs; NEXT kinds
+with Demote and Restore; verify-gate nudges; Next-line coverage
+(`finals.jsonl`); the `config.json` toggles `enabled` (quiets the brief and
+the go binding, not the ledger), `repair`, `verifyGate`. A POST on a file it
+cannot parse is 409, never a rewrite. The server answers only a loopback Host
+and writes its URL and pid to dashboard-url.txt in `~/.claude/state`, removed
+on exit. Probe: `tools/dashboard/tests/today-probe.cjs`.
+
 ## State and switches
 
 `~/.claude/state/opening-move/`: `repos/<key>.json` (ring of 5, `next`,

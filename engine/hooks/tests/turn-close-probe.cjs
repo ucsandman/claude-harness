@@ -423,6 +423,27 @@ try {
     return `${l.bus}; cwd row tainted, next -> repo-s-edit`;
   });
 
+  kase('t', 'finals.jsonl: a human-prompt Stop with a Next line writes {hasNext: true, owner}, one without writes hasNext: false; a Stop after a task notification and an enforce block write none', () => {
+    const FINALS = path.join(STATE, 'finals.jsonl');
+    const finals = () => { try { return fs.readFileSync(FINALS, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (_) { return []; } };
+    const T = mkRepo('repo-t');
+    const before = finals().length;
+    writeBus('st1', [prompt('fix the parser')]);
+    run(stop('st1', T, { last_assistant_message: 'Done.\n\nNext (me): run the parser suite' }));
+    writeBus('st2', [prompt('what changed?')]);
+    run(stop('st2', T, { last_assistant_message: 'Two files changed.' }));
+    writeBus('st3', [prompt('start the workflow'), ev('PromptSubmitted', { origin: 'task-notification', chars: 120, preview: '<task-notification>', turnId: null })]);
+    run(stop('st3', T, { last_assistant_message: 'Next (me): read the verdicts' }));
+    writeBus('st4', [prompt('build it'), edit(path.join(T, 'src', 'b.cjs'))]);
+    const blocked = run(stop('st4', T, { last_assistant_message: 'Built.\n\nNext (me): test it' }), { TURN_CLOSE_MODE: 'enforce' });
+    const rows = finals().slice(before);
+    assert.ok(blocked.json && blocked.json.decision === 'block', 'the enforce Stop must block: ' + blocked.out);
+    assert.strictEqual(rows.length, 2, 'two final messages; none for the notification or the block: ' + JSON.stringify(rows));
+    assert.deepStrictEqual(rows.map((r) => [r.session, r.repo, r.hasNext, r.owner]), [['st1', keyOf(T), true, 'me'], ['st2', keyOf(T), false, null]]);
+    assert.ok(rows.every((r) => Number.isFinite(Date.parse(r.ts))), 'every row carries ts: ' + JSON.stringify(rows));
+    return `${rows.length} finals rows from 4 Stops`;
+  });
+
   // Real bus files: copies of three. One exceeds 512 KB (the tail path); two end in a turn whose
   // main thread edited a code file that still exists inside a git repo (an oracle written here,
   // independent of the hook), so the replay must reach a verdict, not "no code edits".

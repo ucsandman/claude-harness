@@ -15,14 +15,20 @@
  */
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const http = require('http');
 const crypto = require('crypto');
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const HTML_FILE = path.join(__dirname, 'dashboard.html');
 const STORAGE = path.join(ROOT, 'storage');
+// The Today tab's state: the same home derivation as engine/hooks/opening-move.cjs and turn-close.cjs,
+// so a probe that points USERPROFILE at a temp home moves all three together.
+const HOME_DIR = process.env.USERPROFILE || os.homedir();
+const STATE_DIR = path.join(HOME_DIR, '.claude', 'state', 'opening-move');
+const URL_FILE = path.join(HOME_DIR, '.claude', 'state', 'dashboard-url.txt');
 
 const portArgIndex = process.argv.indexOf('--port');
 const PORT_ARG = portArgIndex > -1 ? parseInt(process.argv[portArgIndex + 1], 10) : NaN;
@@ -70,6 +76,14 @@ function authorized(req) {
     }
   }
   return true;
+}
+
+// DNS rebinding: a page on evil.example whose name is rebound to 127.0.0.1 makes same-origin GETs with
+// Host: evil.example and no Origin, so the token check above never runs. Only a loopback Host is served.
+// Strict host[:port] grammar: "evil.example@127.0.0.1" is not a host, it is refused.
+function loopbackHost(host) {
+  const m = /^(?:\[([0-9A-Fa-f:.]+)\]|([A-Za-z0-9.-]+))(?::\d{1,5})?$/.exec(String(host || ''));
+  return !!m && LOOPBACK_HOSTS.has((m[1] || m[2]).toLowerCase());
 }
 
 // Dependencies from engine
@@ -497,6 +511,186 @@ function getDecisionsData() {
   };
 }
 
+// --- Today tab: Opening Move state (~/.claude/state/opening-move) ---
+// Every value read here is sent as data; the page renders it with textContent.
+
+const OM_DAY = 24 * 3600e3;
+const OM_GATES = new Set(['off', 'shadow', 'enforce']);
+const OM_SCOPES = new Set(['item', 'repo', 'all', 'kind']);
+const OM_KEY_RE = /^[A-Za-z0-9_.-]{1,80}$/;
+// 'constructor', 'toString', '__proto__' pass the regex but name Object.prototype members: refused, so a
+// mutes.json key can never shadow one (a kinds.constructor once turned GET into a permanent 500).
+const omKeyOk = (k) => typeof k === 'string' && OM_KEY_RE.test(k) && k !== 'prototype' && !Object.prototype.hasOwnProperty.call(Object.prototype, k);
+const omDict = (v) => Object.assign(Object.create(null), v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+const OM_NEXT_OUTCOMES = new Set(['shown', 'taken', 'ignored', 'still-open']);
+const omFile = (name) => path.join(STATE_DIR, name);
+
+function omReadJson(p, dflt) {
+  try { const v = JSON.parse(fs.readFileSync(p, 'utf8')); return v && typeof v === 'object' ? v : dflt; } catch (_) { return dflt; }
+}
+/**
+ * The write routes' reader: an absent file is the default, a truncated or hand-broken one is an error,
+ * so a POST never rewrites state it could not read (the hooks' non-atomic fallback write, or a bad
+ * edit, would otherwise cost every other mute and every auto-demotion).
+ */
+function omReadStrict(p, dflt) {
+  let text;
+  try { text = fs.readFileSync(p, 'utf8'); } catch (e) {
+    return e && e.code === 'ENOENT' ? { value: dflt } : { error: `${path.basename(p)} unreadable (${(e && e.code) || 'read failed'}), not overwritten` };
+  }
+  try { const v = JSON.parse(text); if (v && typeof v === 'object' && !Array.isArray(v)) return { value: v }; } catch (_) {}
+  return { error: `${path.basename(p)} holds invalid JSON, not overwritten` };
+}
+function omRows(p) {
+  let text = '';
+  try { text = fs.readFileSync(p, 'utf8'); } catch (_) { return []; }
+  const out = [];
+  for (const l of text.split('\n')) { if (!l.trim()) continue; try { const o = JSON.parse(l); if (o && typeof o === 'object') out.push(o); } catch (_) {} }
+  return out;
+}
+/** tmp + rename, so the hooks never read a half-written mutes.json or config.json. */
+function omWriteJson(p, v) {
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  const tmp = `${p}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(v));
+  try { fs.renameSync(tmp, p); } catch (e) { try { fs.unlinkSync(tmp); } catch (_) {} throw e; }
+}
+function omMutesFrom(m) {
+  return {
+    ...m,
+    all: m.all === true,
+    repos: omDict(m.repos),
+    items: omDict(m.items),
+    kinds: omDict(m.kinds),
+  };
+}
+const omMutes = () => omMutesFrom(omReadJson(omFile('mutes.json'), {}));
+function omSettings() {
+  const c = omReadJson(omFile('config.json'), {});
+  return { enabled: c.enabled !== false, repair: c.repair !== false, verifyGate: OM_GATES.has(c.verifyGate) ? c.verifyGate : 'shadow' };
+}
+const omWithin = (row, now, days) => { const t = Date.parse(row && row.ts); return Number.isFinite(t) && now - t < days * OM_DAY; };
+
+function getOpeningMoveData(now = Date.now()) {
+  const digest = omReadJson(omFile('digest.json'), null);
+  const briefs = Object.create(null);
+  let repoFiles = [];
+  try { repoFiles = fs.readdirSync(omFile('repos')).filter((f) => f.endsWith('.json')); } catch (_) {}
+  for (const f of repoFiles) {
+    const lb = omReadJson(path.join(omFile('repos'), f), {}).lastBrief;
+    if (!lb || typeof lb !== 'object') continue;
+    briefs[f.slice(0, -5)] = { ts: lb.ts || null, text: typeof lb.text === 'string' ? lb.text : null, kind: lb.kind || null, reds: Number.isFinite(lb.reds) ? lb.reds : null };
+  }
+  const mutes = omMutes();
+  const settings = omSettings();
+
+  // NEXT kinds: the ledger rows a brief wrote (shown, taken, ignored, still-open); a demoted kind stays listed.
+  const per = Object.create(null);
+  const bump =(kind, field) => { const k = (per[kind] = per[kind] || { kind, shown7: 0, taken7: 0, ignored7: 0, open7: 0, shown14: 0, taken14: 0 }); if (field) k[field]++; };
+  for (const r of omRows(omFile('ledger.jsonl'))) {
+    if (!r.kind || !OM_NEXT_OUTCOMES.has(r.outcome) || !omWithin(r, now, 14)) continue;
+    bump(String(r.kind));
+    const in7 = omWithin(r, now, 7);
+    if (r.outcome === 'shown') { per[r.kind].shown14++; if (in7) per[r.kind].shown7++; }
+    if (r.outcome === 'taken') { per[r.kind].taken14++; if (in7) per[r.kind].taken7++; }
+    if (in7 && r.outcome === 'ignored') per[r.kind].ignored7++;
+    if (in7 && r.outcome === 'still-open') per[r.kind].open7++;
+  }
+  // Only a key the mute route accepts is listed, so every listed kind has a working [Restore].
+  for (const kind of Object.keys(mutes.kinds)) if (omKeyOk(kind)) bump(kind);
+  const stats = Object.values(per)
+    .map((k) => ({ ...k, rate14: k.shown14 ? k.taken14 / k.shown14 : null, state: mutes.kinds[k.kind] === 'demoted' ? 'demoted' : 'active' }))
+    .sort((a, b) => b.shown14 - a.shown14 || String(a.kind).localeCompare(String(b.kind)));
+
+  // Verify gate: would-blocks in 7 d; one is nudged when the gate blocked it (enforce) or a
+  // "did you test" prompt followed it in the same session (shadow, opening-move.cjs nudge()).
+  const tc = omRows(omFile('turn-close.jsonl')).filter((r) => omWithin(r, now, 7));
+  const would = tc.filter((r) => r.wouldBlock === true);
+  const nudges = tc.filter((r) => r.nudged === true);
+  const nudged7 = would.filter((w) => {
+    if (w.blocked === true) return true;
+    const t = Date.parse(w.ts);
+    const until = Math.min(Infinity, ...would.filter((x) => x.session === w.session && Date.parse(x.ts) > t).map((x) => Date.parse(x.ts)));
+    return nudges.some((r) => r.session === w.session && Date.parse(r.ts) >= t && Date.parse(r.ts) < until);
+  }).length;
+  const verify = { wouldBlock7: would.length, nudged7, precision7: would.length ? nudged7 / would.length : null, mode: settings.verifyGate };
+
+  const finals = omRows(omFile('finals.jsonl')).filter((r) => omWithin(r, now, 7));
+  const nextCoverage = { finals: finals.length, withNext: finals.filter((r) => r.hasNext === true).length };
+  return { digest, briefs, mutes, settings, stats, verify, nextCoverage };
+}
+
+/** POST /api/opening-move/mute: {scope, key, days:7|null, restore}. Returns [code, body]. */
+function setOpeningMoveMute(body, now = Date.now()) {
+  const b = body && typeof body === 'object' ? body : {};
+  if (!OM_SCOPES.has(b.scope)) return [400, { error: 'scope must be item, repo, all or kind' }];
+  if (b.restore !== undefined && typeof b.restore !== 'boolean') return [400, { error: 'restore must be a boolean' }];
+  if (!(b.days === undefined || b.days === null || b.days === 7)) return [400, { error: 'days must be 7 or null' }];
+  const needsKey = b.scope !== 'all';
+  if ((needsKey || b.key !== undefined) && !omKeyOk(b.key)) return [400, { error: 'key must match [A-Za-z0-9_.-]{1,80} and not name an Object.prototype member' }];
+  const cur = omReadStrict(omFile('mutes.json'), {});
+  if (cur.error) return [409, { error: cur.error }];
+  const m = omMutesFrom(cur.value);
+  const restore = b.restore === true;
+  if (b.scope === 'item' && !restore) {
+    const d = omReadJson(omFile('digest.json'), null);
+    if (d && Array.isArray(d.red) && d.red.some((x) => x && x.hash === b.key && x.guardClass === true)) {
+      return [400, { error: 'guard-class reds cannot be muted: a security leg is false, so it stays on RED until it is fixed' }];
+    }
+  }
+  if (b.scope === 'item') {
+    if (restore) delete m.items[b.key];
+    else m.items[b.key] = new Date(now + (b.days || 7) * OM_DAY).toISOString();
+  } else if (b.scope === 'repo') {
+    if (restore) delete m.repos[b.key];
+    else m.repos[b.key] = true;
+  } else if (b.scope === 'all') {
+    m.all = !restore;
+  } else {
+    m.kinds[b.key] = restore ? 'restored' : 'demoted';
+  }
+  omWriteJson(omFile('mutes.json'), m);
+  return [200, { ok: true, mutes: m }];
+}
+
+/** POST /api/opening-move/settings: {enabled?, repair?, verifyGate?}, merged into config.json. */
+function setOpeningMoveSettings(body) {
+  const b = body && typeof body === 'object' && !Array.isArray(body) ? body : null;
+  const keys = b ? Object.keys(b) : [];
+  if (!keys.length) return [400, { error: 'send enabled, repair or verifyGate' }];
+  for (const k of keys) {
+    if (k === 'enabled' || k === 'repair') { if (typeof b[k] !== 'boolean') return [400, { error: `${k} must be a boolean` }]; }
+    else if (k === 'verifyGate') { if (!OM_GATES.has(b[k])) return [400, { error: 'verifyGate must be off, shadow or enforce' }]; }
+    else return [400, { error: `unknown setting ${k.slice(0, 40)}` }];
+  }
+  const cur = omReadStrict(omFile('config.json'), {});
+  if (cur.error) return [409, { error: cur.error }];
+  omWriteJson(omFile('config.json'), { ...cur.value, ...b });
+  return [200, { ok: true, settings: omSettings() }];
+}
+
+/** POST /api/opening-move/refresh: one detached digest run behind digest.lock (the brief's protocol). */
+function refreshOpeningMove() {
+  let om;
+  try { om = require('../../engine/hooks/opening-move.cjs'); } catch (e) { return [500, { started: false, reason: 'opening-move.cjs failed to load' }]; }
+  const held = om.lockState();
+  if (held && !held.stale) return [200, { started: false, reason: 'refresh running' }];
+  const job = process.env.OPENING_MOVE_DIGEST_JOB || path.join(ROOT, 'jobs', 'opening-move-digest.cjs');
+  if (!fs.existsSync(job)) return [500, { started: false, reason: 'jobs/opening-move-digest.cjs not found' }];
+  if (!om.takeLock(process.pid)) return [200, { started: false, reason: 'refresh running' }];
+  try {
+    const child = spawn(process.execPath, [job], { detached: true, stdio: 'ignore', windowsHide: true, env: { ...process.env, OPENING_MOVE_FROM: 'session', OPENING_MOVE_SPAWNER: 'dashboard' } });
+    child.on('error', () => {});
+    child.unref();
+    // The child adopts a lock naming its parent or itself (jobs/opening-move-digest.cjs acquireLock).
+    omWriteJson(omFile('digest.lock'), { pid: child.pid || null, ts: new Date().toISOString() });
+    return [200, { started: true, pid: child.pid || null }];
+  } catch (_) {
+    try { fs.unlinkSync(omFile('digest.lock')); } catch (_) {}
+    return [500, { started: false, reason: 'spawn failed' }];
+  }
+}
+
 // dashboard.html is ~142 KB and neither it nor SESSION_TOKEN changes while the
 // process lives, so read and inject once instead of on every request. Lazily,
 // so requiring this module still touches no disk.
@@ -515,6 +709,10 @@ function renderPage() {
 function serveDashboard() {
   const server = http.createServer(async (req, res) => {
     res.setHeader(ID_HEADER, '1');
+    if (!loopbackHost(req.headers.host)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'Forbidden: Host must be 127.0.0.1, localhost or [::1]' }));
+    }
     const parsedUrl = new URL(req.url, `http://localhost:${PORT}`);
     const pathname = parsedUrl.pathname;
     const query = Object.fromEntries(parsedUrl.searchParams);
@@ -554,6 +752,21 @@ function serveDashboard() {
         return sendJson({ error: 'Forbidden' }, 403);
       }
 
+      if (req.method === 'GET' && pathname === '/api/opening-move') {
+        return sendJson(getOpeningMoveData());
+      }
+      if (req.method === 'POST' && pathname === '/api/opening-move/mute') {
+        const [code, out] = setOpeningMoveMute(await readBody());
+        return sendJson(out, code);
+      }
+      if (req.method === 'POST' && pathname === '/api/opening-move/settings') {
+        const [code, out] = setOpeningMoveSettings(await readBody());
+        return sendJson(out, code);
+      }
+      if (req.method === 'POST' && pathname === '/api/opening-move/refresh') {
+        const [code, out] = refreshOpeningMove();
+        return sendJson(out, code);
+      }
       if (req.method === 'GET' && pathname === '/api/overview') {
         return sendJson(getOverviewData());
       }
@@ -775,6 +988,13 @@ function serveDashboard() {
   server.listen(PORT, '127.0.0.1', () => {
     const url = `http://127.0.0.1:${PORT}`;
     console.log(`[Agnostic-Dashboard] Command Center live at ${url}`);
+    // Where a session finds the running dashboard (the Today tab) without guessing the port.
+    try { omWriteJson(URL_FILE, { url, pid: process.pid, ts: new Date().toISOString() }); } catch (_) {}
+    // Gone with the process, so a reader rarely meets a dead pid (a hard kill still leaves the file:
+    // readers check the pid is alive and started before ts).
+    const dropUrlFile = () => { try { if ((JSON.parse(fs.readFileSync(URL_FILE, 'utf8')) || {}).pid === process.pid) fs.unlinkSync(URL_FILE); } catch (_) {} };
+    process.on('exit', dropUrlFile);
+    for (const sig of ['SIGINT', 'SIGTERM', 'SIGBREAK']) { try { process.on(sig, () => process.exit(0)); } catch (_) {} }
     openBrowser(url);
   });
 }
@@ -783,4 +1003,4 @@ if (require.main === module) {
   serveDashboard();
 }
 
-module.exports = { serveDashboard, isOurDashboard, getOverviewData, getErrorsData, getRulesData, getRoutinesData, getDashClawFullConfig, saveDashClawConfig, simulateGuard, getDecisionsData, authorized, SESSION_TOKEN };
+module.exports = { serveDashboard, isOurDashboard, getOverviewData, getOpeningMoveData, setOpeningMoveMute, setOpeningMoveSettings, STATE_DIR, getErrorsData, getRulesData, getRoutinesData, getDashClawFullConfig, saveDashClawConfig, simulateGuard, getDecisionsData, authorized, SESSION_TOKEN };

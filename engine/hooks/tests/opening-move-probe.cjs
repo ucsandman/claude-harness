@@ -532,6 +532,71 @@ try {
     assert.ok(/^clean \(UNVERIFIED: no fixture result\): 0 dirty/m.test(b.ctx) && !/clean \(fixture/.test(b.ctx), b.ctx);
     assert.ok(/\(7 of 8 sources, no fixture result\)\.$/.test(b.ctx.split('\n')[0]), b.ctx.split('\n')[0]);
   });
+
+  kase('t', 'an item mute (mutes.json items {digest hash: until}, the dashboard\'s [Mute 7 days]) drops that red from RED, LEFT OPEN and NEXT and the rules line ends "; 1 muted."; an expired mute hides nothing and is pruned', () => {
+    fs.mkdirSync(path.join(TMP, 'mute'), { recursive: true });
+    const ha = mkRepo(path.join('mute', 'agnostic-ai'));
+    const MUTES = path.join(STATE, 'mutes.json');
+    const cron = { kind: 'job-stale', text: 'CronwatchDaily: last result 1 (board lists failed tasks).', hash: 'cccccccccccc', ageMs: 0, guardClass: false, source: 'jobs' };
+    const job = { kind: 'job-stale', text: 'NightlyMeditation: latest-line.txt 51 d old (limit 26 h), last result 1.', hash: 'aaaaaaaaaaaa', ageMs: 51 * 24 * H, guardClass: false, source: 'jobs' };
+    plantDigest({ red: [cron, job] });
+    fs.writeFileSync(MUTES, JSON.stringify({ items: { aaaaaaaaaaaa: iso(7 * 24 * H) } }));
+    const m = run(ss(ha, 'st1'));
+    const keptLive = (readJsonFile(MUTES) || {}).items || {};
+    fs.writeFileSync(MUTES, JSON.stringify({ items: { aaaaaaaaaaaa: iso(-60e3) } }));
+    const x = run(ss(ha, 'st2'));
+    const afterExpired = (readJsonFile(MUTES) || {}).items || {};
+    fs.writeFileSync(MUTES, '{}');
+    clearDigest();
+    neg('t', 'a muted item never reaches the brief (RED, LEFT OPEN, NEXT or the systemMessage)', () => !/NightlyMeditation/.test(m.ctx + (m.sys || '')));
+    assert.ok(/^RED: CronwatchDaily: last result 1/m.test(m.ctx) && m.ctx.includes('NEXT (me) [harness-red, rung 8]: CronwatchDaily'), m.ctx);
+    assert.ok(/^rules: \d+ of \d+ matched.*; 1 muted\.$/m.test(m.ctx), 'the rules line counts the mute: ' + m.ctx);
+    assert.ok(/: 1 red\. Type go to start: CronwatchDaily/.test(m.sys || ''), 'systemMessage: ' + m.sys);
+    assert.ok(keptLive.aaaaaaaaaaaa, 'a live mute must stay in mutes.json');
+    assert.ok(/^LEFT OPEN: NightlyMeditation/m.test(x.ctx) && /^RED: CronwatchDaily[^\n]*; NightlyMeditation/m.test(x.ctx), 'an expired mute hides nothing: ' + x.ctx);
+    assert.ok(!/muted/.test(x.ctx), 'no muted phrase once the mute expired: ' + x.ctx);
+    assert.deepStrictEqual(afterExpired, {}, 'the expired entry is pruned from mutes.json in the same run');
+    return '1 muted of 2 reds; 1 expired mute pruned';
+  });
+
+  kase('u', 'the dashboard toggle (config.json enabled: false) gives the OFF answer and binds no "go" but still writes the prompt\'s ring row (the digest\'s sign of life); enabled: true brings the brief back', () => {
+    const dir = mkRepo('fx-toggle');
+    const CONFIG = path.join(STATE, 'config.json');
+    seed(dir, { next: { text: 'run the toggle suite', owner: 'me', ts: iso(-H), session: 'old-u' } });
+    fs.writeFileSync(CONFIG, JSON.stringify({ enabled: false, verifyGate: 'shadow' }));
+    const off = run(ss(dir, 'su1'));
+    const go = run(up(dir, 'su1', 'go'));
+    const ringOff = (JSON.parse(fs.readFileSync(path.join(STATE, 'repos', keyOf(dir) + '.json'), 'utf8')).ring || []).some((r) => r.session === 'su1');
+    fs.writeFileSync(CONFIG, JSON.stringify({ enabled: true, verifyGate: 'shadow' }));
+    const on = run(ss(dir, 'su2'));
+    fs.writeFileSync(CONFIG, '{}');
+    neg('u', 'a session toggled off binds no "go"', () => go.ctx === '');
+    assert.ok(ringOff, 'the toggle quiets the brief, not the bookkeeping: the toggled-off prompt must still write its ring row');
+    assert.ok(off.json, 'no JSON: ' + JSON.stringify(off.out.slice(0, 80)));
+    assert.strictEqual(off.ctx, '[opening-move] off (dashboard toggle)');
+    assert.strictEqual(off.sys, undefined, 'the OFF answer carries no systemMessage');
+    assert.ok(/^\[opening-move\] fx-toggle @ main /.test(on.ctx) && on.ctx.includes('run the toggle suite'), 'enabled: true gives the brief back: ' + on.ctx.split('\n')[0]);
+    return 'off, then on';
+  });
+
+  kase('v', 'a guard-class red (a security leg false) is never muted: with live item mutes on its digest hash and its rank hash it stays on RED in a harness repo and in another repo, and no "muted" phrase prints', () => {
+    fs.mkdirSync(path.join(TMP, 'gmute'), { recursive: true });
+    const ha = mkRepo(path.join('gmute', 'agnostic-ai'));
+    const other = mkRepo('fx-gmute');
+    const MUTES = path.join(STATE, 'mutes.json');
+    const guard = { kind: 'guard-leg', text: 'GUARD secret-guard-denies-canary is not denying: do not trust guarded operations.', hash: 'dddddddddddd', ageMs: H, guardClass: true, source: 'canary' };
+    const rankHash = require('crypto').createHash('sha1').update(['harness-red', guard.hash].join('\u0000')).digest('hex').slice(0, 12);
+    plantDigest({ red: [guard] });
+    fs.writeFileSync(MUTES, JSON.stringify({ items: { [guard.hash]: iso(7 * 24 * H), [rankHash]: iso(7 * 24 * H) } }));
+    const h = run(ss(ha, 'sv1'));
+    const o = run(ss(other, 'sv2'));
+    fs.writeFileSync(MUTES, '{}');
+    clearDigest();
+    neg('v', 'a muted guard-class red still reaches the RED line in a harness repo and in another repo', () => /^RED: GUARD secret-guard-denies-canary/m.test(h.ctx) && /^RED: GUARD secret-guard-denies-canary/m.test(o.ctx));
+    assert.ok(!/muted/.test(h.ctx + o.ctx), 'a guard-class red is never counted as muted: ' + h.ctx + ' / ' + o.ctx);
+    assert.ok(/^NEXT \(me\) \[harness-red, rung 8, 1 h\]: GUARD secret-guard-denies-canary/m.test(h.ctx), 'in the harness repo the guard red is still the NEXT: ' + h.ctx);
+    return 'guard red on RED in 2 of 2 repos, 0 muted';
+  });
 } finally {
   try { fs.rmSync(TMP, { recursive: true, force: true }); } catch (_) {}
 }

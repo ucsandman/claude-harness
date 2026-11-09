@@ -10,7 +10,10 @@
  * NEXT with its owner, at zero model tokens. Every source prints the count it
  * processed and, on failure, why (rules L1/L2).
  *   gates    CLAUDE_CODE_ENTRYPOINT must be 'cli'; source 'resume' prints nothing;
- *            OPENING_MOVE=off or a mute prints only the off line.
+ *            OPENING_MOVE=off, config.json enabled:false (the dashboard toggle) or a
+ *            repo/all mute prints only the off line (the toggle still writes the prompt's
+ *            ring row, the digest's sign of life); an item mute hides that item, never a
+ *            guard-class red.
  *   sources  three parallel git calls (execFile, windowsHide, 600 ms each); the repo
  *            ledger ~/.claude/state/opening-move/repos/<key>.json; the newest ring
  *            row's transcript tail (fallback for the Next line); markers D1-D4;
@@ -27,7 +30,7 @@
  * names and the stored Next text (160 chars, control characters stripped, double
  * quotes and backticks turned into '): never a
  * commit subject, transcript prose or file contents.
- * Not built yet, printed as such: fleet ranking and the dashboard Today tab (step 5).
+ * Not built yet, printed as such: fleet ranking. The dashboard Today tab (step 5) writes mutes.json and config.json.
  * turn-close.jsonl and the ledger fields
  * next/lastTest/touched print as "turn-close.cjs has not written it yet" until it has.
  */
@@ -47,6 +50,7 @@ const P = {
   ledger: path.join(STATE_DIR, 'ledger.jsonl'),
   seen: path.join(STATE_DIR, 'seen.json'),
   mutes: path.join(STATE_DIR, 'mutes.json'),
+  config: path.join(STATE_DIR, 'config.json'),
   turnClose: path.join(STATE_DIR, 'turn-close.jsonl'),
   digest: path.join(STATE_DIR, 'digest.json'),
   lock: path.join(STATE_DIR, 'digest.lock'),
@@ -150,7 +154,11 @@ function day(ms) { const d = new Date(ms); return `${d.getFullYear()}-${pad2(d.g
 function hhmm(ms) { const d = new Date(ms); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
 const pl = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const normPath = (p) => String(p).replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
-const isOff = (env) => String(env.OPENING_MOVE || '').toLowerCase() === 'off';
+// Off: the env switch, or the dashboard Today tab's "Opening move" toggle (config.json enabled: false).
+const envOff = (env) => String(env.OPENING_MOVE || '').toLowerCase() === 'off';
+/** The dashboard toggle: quiets the brief and the go binding, never the bookkeeping (main() still writes the ring row). */
+const toggledOff = () => readJson(P.config, {}).enabled === false;
+const isOff = (env) => envOff(env) || toggledOff();
 /** State key: the repo path lower-cased with every run of [^a-z0-9] replaced by '-'. */
 function repoKey(top) { return String(top).toLowerCase().replace(/[^a-z0-9]+/g, '-'); }
 function sidFile(sid) { return path.join(P.sessions, String(sid).replace(/[^A-Za-z0-9_-]/g, '_') + '.json'); }
@@ -479,8 +487,13 @@ function rank(state) {
   const ah = (s.git && s.git.ahead) || { ok: false, why: 'not run' };
   const dirty = st.ok && Array.isArray(st.dirty) ? st.dirty : [];
   const mk = s.markers || {};
-  const res = { next: null, leftForWes: [], open: [], also: [], hidden: 0, red: [], matched: 0, checked: 0, skipped: [], archived: 0, kinds: {} };
+  const res = { next: null, leftForWes: [], open: [], also: [], hidden: 0, red: [], matched: 0, checked: 0, skipped: [], archived: 0, kinds: {}, muted: 0 };
   const items = [];
+  // Item mutes (mutes.json items, live ones only): keyed by an item's hash, or for a digest red by the
+  // digest's own hash (what the dashboard's [Mute 7 days] sends). A muted item still counts as matched.
+  // A guard-class red ignores every mute.
+  const muted = s.muted || {};
+  const mutedVia = new Set();
   const skip = (rung, kind, why) => res.skipped.push({ rung, kind, why });
   const add = (rung, kind, text, owner, est, evidence, ageMs, short) => items.push({ rung, kind, text, owner, est, hash: sha12(kind, evidence), ageMs, short });
   const branch = nameOnly(repo.branch || 'unknown', 60);
@@ -562,8 +575,13 @@ function rank(state) {
     res.checked++;
     for (const it of s.digest.red) {
       if (!it || !it.text) continue;
-      if (repo.isHarness) add(8, 'harness-red', clean(it.text, 300), 'me', '5 min', it.hash || it.text, it.ageMs || 0, shortText(it.text));
-      else if (it.guardClass === true) res.red.push({ rung: 8, kind: 'harness-red', text: clean(it.text, 300), owner: 'me', hash: sha12('harness-red', it.hash || it.text), ageMs: it.ageMs || 0, short: shortText(it.text), guard: true });
+      // A guard-class red is never muted: hiding a false security leg for 7 days is the worst a mute can do.
+      if (repo.isHarness) {
+        add(8, 'harness-red', clean(it.text, 300), 'me', '5 min', it.hash || it.text, it.ageMs || 0, shortText(it.text));
+        const last = items[items.length - 1];
+        if (it.guardClass === true) last.guard = true;
+        else if (it.hash && muted[it.hash]) mutedVia.add(last.hash);
+      } else if (it.guardClass === true) res.red.push({ rung: 8, kind: 'harness-red', text: clean(it.text, 300), owner: 'me', hash: sha12('harness-red', it.hash || it.text), ageMs: it.ageMs || 0, short: shortText(it.text), guard: true });
     }
   }
   // 9 stale-dirty: dirty files older than 7 days; unchanged for 21 days = archived
@@ -594,6 +612,7 @@ function rank(state) {
   for (const raw of items) {
     const it = { ...raw, ...hardStop(raw.text, raw.owner, !!repo.deploysOnPush) };
     if (!(it.kind in res.kinds)) res.kinds[it.kind] = it.hash; // the first item of a kind (rung 8 may add several)
+    if (!it.guard && (muted[it.hash] || mutedVia.has(it.hash))) { res.muted++; continue; } // kinds keeps it, so judge() never reads a mute as taken
     if (RED_KINDS.has(it.kind)) res.red.push(it);
     if (it.owner === 'you') { res.leftForWes.push(it); continue; }
     if (demoted[it.kind] === 'demoted') { res.also.push(it); continue; }
@@ -638,6 +657,19 @@ function demotions(rows, mutes, now) {
     }
   }
   return changed;
+}
+
+/**
+ * The mutes write-back, built from a fresh read of mutes.json: a dashboard click during the brief's git
+ * calls (a new mute, a Restore) must survive. Only expired items are pruned; only kinds the fresh copy
+ * neither demotes nor restores are demoted.
+ */
+function mergeMutes(demotedNow, now) {
+  const m = readJson(P.mutes, {});
+  if (m.items && typeof m.items === 'object') for (const h of Object.keys(m.items)) if (!(Date.parse(m.items[h]) > now)) delete m.items[h];
+  m.kinds = m.kinds && typeof m.kinds === 'object' ? m.kinds : {};
+  for (const k of demotedNow) if (!m.kinds[k]) m.kinds[k] = 'demoted';
+  return m;
 }
 
 /** taken when the previous NEXT's detector now reads green; ignored when unchanged with no commits; else still-open. */
@@ -788,6 +820,15 @@ async function brief(evt, opts = {}) {
   if (isOff(env)) return OFF;
   const mutes = readJson(P.mutes, {});
   if (mutes.all === true) return OFF;
+  // Item mutes {hash: untilIso} from the dashboard: a live one hides its item; an expired one is pruned below.
+  const mutedItems = {};
+  let mutesPruned = false;
+  if (mutes.items && typeof mutes.items === 'object') {
+    for (const [h, until] of Object.entries(mutes.items)) {
+      if (Date.parse(until) > Date.now()) mutedItems[h] = true;
+      else { delete mutes.items[h]; mutesPruned = true; }
+    }
+  }
   const sid = String(evt.session_id || '');
   const found = findRepo(evt.cwd);
   if (!found) return source === 'compact' ? null : answer(`[opening-move] fleet mode (no git repo at this cwd): ${digestPart(readDigest(), env, Date.now())}; fleet ranking not built, 0 repos ranked; NEXT: none.`);
@@ -854,7 +895,7 @@ async function brief(evt, opts = {}) {
     digest: digest && Array.isArray(digest.red) ? { red: digest.red } : undefined,
     lastTest: rs.lastTest && typeof rs.lastTest === 'object' ? rs.lastTest : undefined,
     touched: ring[0] && Array.isArray(ring[0].touched) ? ring[0].touched : undefined,
-    next, markers, demoted: mutes.kinds || {}, staleTop,
+    next, markers, demoted: mutes.kinds || {}, staleTop, muted: mutedItems,
   };
   let r = rank(state);
   if (r.next && !staleTop[r.next.hash] && isStaleTop(ledgerRows, key, r.next.hash, now)) {
@@ -897,6 +938,7 @@ async function brief(evt, opts = {}) {
   const skipped = r.skipped.length ? `, ${r.skipped.length} skipped (source absent: ${r.skipped.map((x) => x.kind).join(', ')})` : '';
   const dirtyPart = status.ok ? `${status.dirty.length} dirty` : `dirty: unknown (${status.why})`;
   const aheadPart = ahead.ok ? `${ahead.n} unpushed` : `unpushed: unknown (${ahead.why})`;
+  const mutedPart = r.muted ? `; ${r.muted} muted` : '';
   const nothing = !r.next && !r.leftForWes.length && !r.red.length && !r.open.length;
   let sys = '';
   if (nothing) {
@@ -907,7 +949,7 @@ async function brief(evt, opts = {}) {
     const cleanLabel = !fx ? 'clean (UNVERIFIED: no fixture result)' : fx.found >= fx.of ? `clean (fixture ${fx.found} of ${fx.of})` : `clean (UNVERIFIED: fixture ${fx.found} of ${fx.of})`;
     const green = ciRows.filter((x) => x.branch === head.branch && x.conclusion === 'success' && Date.parse(x.createdAt)).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0];
     const ciPart = green ? `, CI green ${ago(now - Date.parse(green.createdAt))} ago` : '';
-    lines.push({ text: `${isClean ? cleanLabel : 'no NEXT'}: ${dirtyPart}, ${aheadPart}${ciPart}, ${r.matched} of ${r.checked} NEXT rules matched${skipped}.`, keep: true });
+    lines.push({ text: `${isClean ? cleanLabel : 'no NEXT'}: ${dirtyPart}, ${aheadPart}${ciPart}, ${r.matched} of ${r.checked} NEXT rules matched${skipped}${mutedPart}.`, keep: true });
   } else {
     if (r.next) {
       const chip = [r.next.kind, `rung ${r.next.rung}`, r.next.ageMs ? ago(r.next.ageMs) : null].filter(Boolean).join(', ');
@@ -915,7 +957,8 @@ async function brief(evt, opts = {}) {
     } else {
       lines.push({ text: 'NEXT (me): none. On "go", prepare the LEFT FOR WES item and stop.', keep: true });
     }
-    lines.push({ text: `rules: ${r.matched} of ${r.checked} matched${skipped}; ${dirtyPart}, ${aheadPart}.` });
+    // Kept when an item is muted: the cap must never hide the count of what was hidden.
+    lines.push({ text: `rules: ${r.matched} of ${r.checked} matched${skipped}; ${dirtyPart}, ${aheadPart}${mutedPart}.`, keep: !!r.muted });
     const headline = `Opening move, ${name}: ${r.red.length} red${r.leftForWes.length ? `, ${r.leftForWes.length} left for Wes` : ''}`;
     if (r.next) sys = `${headline}. Type go to start: ${clean(r.next.short || r.next.text, 90).replace(/[.,;:]+$/, '')}${r.next.est ? `, about ${r.next.est}` : ''}.`;
     else if (r.leftForWes.length) sys = `${headline} (prepare only): ${clean(r.leftForWes[0].short || r.leftForWes[0].text, 90).replace(/[.,;:]+$/, '')}.`;
@@ -947,12 +990,13 @@ async function brief(evt, opts = {}) {
   }
   const fresh = readJson(repoFile, {}); // re-read: a sibling's prompt may have added a ring row meanwhile
   fresh.repo = top;
-  fresh.lastBrief = { ts: nowIso, kind: bn ? bn.kind : null, hash: bn ? bn.hash : null, owner: bn ? bn.owner : null, head: head.head };
+  fresh.lastBrief = { ts: nowIso, kind: bn ? bn.kind : null, hash: bn ? bn.hash : null, owner: bn ? bn.owner : null, head: head.head, text: bn ? bn.text : null, reds: r.red.length };
   fresh.staleTop = staleTop;
   writeJson(repoFile, fresh);
   if (outcome) appendLine(P.ledger, { ts: nowIso, repo: key, kind: rs.lastBrief.kind, hash: rs.lastBrief.hash, outcome });
-  for (const k of demotedNow) appendLine(P.ledger, { ts: nowIso, repo: key, kind: k, hash: null, outcome: 'auto-demoted' });
-  if (demotedNow.length) writeJson(P.mutes, mutes);
+  const mutesOut = demotedNow.length || mutesPruned ? mergeMutes(demotedNow, now) : null;
+  for (const k of demotedNow) if (mutesOut.kinds[k] === 'demoted') appendLine(P.ledger, { ts: nowIso, repo: key, kind: k, hash: null, outcome: 'auto-demoted' });
+  if (mutesOut) writeJson(P.mutes, mutesOut);
   if (bn) appendLine(P.ledger, { ts: nowIso, repo: key, kind: bn.kind, hash: bn.hash, outcome: 'shown' });
   const shown = [r.next, ...r.leftForWes].filter(Boolean);
   if (shown.length) {
@@ -991,7 +1035,7 @@ function main(evt, opts = {}) {
   if (env.CLAUDE_CODE_ENTRYPOINT !== 'cli') return '';
   if (!evt || evt.hook_event_name !== 'UserPromptSubmit') return '';
   if (isMachineTurn(evt)) return '';
-  if (isOff(env)) return '';
+  if (envOff(env)) return '';
   const sid = String(evt.session_id || '').trim();
   // A prompt with no transcript is not a Claude Code session (a probe or a hand run): no ring row.
   if (!sid || !evt.transcript_path) return '';
@@ -1012,6 +1056,9 @@ function main(evt, opts = {}) {
   rs.repo = found.top;
   rs.ring = [row, ...ring.filter((r) => r.session !== sid)].slice(0, RING_MAX);
   writeJson(repoFile, rs);
+  // The toggle quiets the nudge and the go binding; the ring row above keeps the digest's repair gate
+  // seeing a live session (jobs/opening-move-digest.cjs lastSignOfLife), so no repair runs under it.
+  if (toggledOff()) return '';
 
   nudge(sid, evt.prompt, now);
 

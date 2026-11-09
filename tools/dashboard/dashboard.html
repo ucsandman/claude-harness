@@ -715,6 +715,23 @@
     .toast.warning { border-left: 4px solid var(--warning); }
     .toast.error { border-left: 4px solid var(--danger); }
     @keyframes toastIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+    /* Today tab (Opening Move) */
+    #view-today .today-lead { font-size: 13px; color: var(--text-muted); margin-bottom: 14px; max-width: 900px; }
+    #view-today .today-top { font-size: 17px; font-weight: 600; }
+    #view-today .today-sub { font-size: 12.5px; color: var(--text-muted); margin-top: 6px; }
+    #view-today .today-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 0 20px; }
+    #view-today .today-row-text { font-weight: 600; font-size: 14px; word-break: break-word; }
+    #view-today .today-row-meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    #view-today .today-note { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+    #view-today .today-empty { padding: 14px 4px; color: var(--text-muted); font-size: 13px; }
+    #view-today table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    #view-today th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+    #view-today td { padding: 7px 8px; border-bottom: 1px solid var(--border); }
+    #view-today td.num { font-variant-numeric: tabular-nums; }
+    #view-today .today-setting { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    #view-today .today-setting:last-child { border-bottom: none; }
+    #view-today .today-big { font-size: 15px; font-weight: 600; margin: 4px 0; }
   </style>
 </head>
 <body>
@@ -738,7 +755,8 @@
 
     <!-- Navigation Bar -->
     <div class="nav-tabs">
-      <button class="tab-btn active" data-tab="overview">📊 Overview &amp; Health</button>
+      <button class="tab-btn active" data-tab="today">Today</button>
+      <button class="tab-btn" data-tab="overview">📊 Overview &amp; Health</button>
       <button class="tab-btn" data-tab="errors">🔍 Errors &amp; Distill <span id="tab-badge-errors" class="tab-badge">0</span></button>
       <button class="tab-btn" data-tab="skills">🧩 Skills &amp; Recommendations <span id="tab-badge-skills" class="tab-badge">99</span></button>
       <button class="tab-btn" data-tab="rules">📜 Rules &amp; Dispositions</button>
@@ -746,8 +764,45 @@
       <button class="tab-btn" data-tab="decisions">🛡️ Governed Decisions (DashClaw)</button>
     </div>
 
+    <!-- 0. TODAY VIEW: Opening Move state from /api/opening-move (~/.claude/state/opening-move) -->
+    <div id="view-today" class="view-panel active">
+      <div class="panel-card">
+        <div class="panel-title">
+          <span>Today: what the harness found, fixed and will show the next session</span>
+          <button class="btn btn-accent" id="today-refresh-btn" onclick="refreshTodayDigest()">Refresh digest</button>
+        </div>
+        <div class="today-lead">Every Claude Code session opens with a short brief built from this digest: what is red, what was repaired, and one NEXT step. Mute an item here and the next session start leaves it out.</div>
+        <div id="today-top" class="today-top">Loading the digest...</div>
+        <div id="today-sub" class="today-sub"></div>
+      </div>
+      <div class="today-grid">
+        <div class="panel-card">
+          <div class="panel-title"><span>Red now</span><span id="today-red-count" class="tag"></span></div>
+          <div id="today-red"></div>
+        </div>
+        <div class="panel-card">
+          <div class="panel-title"><span>Fixed for you</span><span id="today-fixed-count" class="tag"></span></div>
+          <div id="today-fixed"></div>
+        </div>
+      </div>
+      <div class="panel-card">
+        <div class="panel-title"><span>NEXT kinds: how often each kind of NEXT was shown and taken</span><span id="today-kinds-count" class="tag"></span></div>
+        <div id="today-kinds"></div>
+      </div>
+      <div class="today-grid">
+        <div class="panel-card">
+          <div class="panel-title"><span>Verify gate</span><span id="today-gate-mode" class="tag"></span></div>
+          <div id="today-verify"></div>
+        </div>
+        <div class="panel-card">
+          <div class="panel-title"><span>Settings</span></div>
+          <div id="today-settings"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- 1. OVERVIEW VIEW -->
-    <div id="view-overview" class="view-panel active">
+    <div id="view-overview" class="view-panel">
       <!-- Bloat Audit & Context Health Banner -->
       <div class="panel-card" style="margin-bottom: 20px; background: linear-gradient(135deg, rgba(31, 111, 235, 0.08) 0%, rgba(137, 87, 229, 0.08) 100%); border-color: rgba(88, 166, 255, 0.3);">
         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
@@ -1757,6 +1812,7 @@ dashclaw install claude --trial</code></pre>
         const tab = btn.dataset.tab;
         document.getElementById(`view-${tab}`).classList.add('active');
 
+        if (tab === 'today') loadToday();
         if (tab === 'errors') loadErrors();
         if (tab === 'skills') { loadSkills(); loadProjects(); }
         if (tab === 'rules') loadRules();
@@ -3146,6 +3202,196 @@ Overwrite them with the SSOT now?`
       return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
+    // --- Today tab (Opening Move): GET /api/opening-move. Strings from state files are set with
+    // textContent only (el() below never parses HTML), so a hostile digest line stays text.
+    let todayData = null;
+    function el(tag, props = {}, ...kids) {
+      const n = document.createElement(tag);
+      for (const [k, v] of Object.entries(props || {})) {
+        if (v == null) continue;
+        if (k === 'style') n.style.cssText = v;
+        else if (k === 'className') n.className = v;
+        else if (k.startsWith('on') && typeof v === 'function') n.addEventListener(k.slice(2), v);
+        else n.setAttribute(k, v);
+      }
+      for (const c of kids.flat()) {
+        if (c == null || c === false) continue;
+        n.appendChild(typeof c === 'object' ? c : document.createTextNode(String(c)));
+      }
+      return n;
+    }
+    const todayPad = (n) => String(n).padStart(2, '0');
+    function todayAgo(ms) {
+      ms = Math.max(0, ms || 0);
+      if (ms < 60e3) return `${Math.round(ms / 1000)} s`;
+      if (ms < 3600e3) return `${Math.round(ms / 60e3)} min`;
+      if (ms < 2 * 86400e3) return `${Math.round(ms / 3600e3)} h`;
+      return `${Math.floor(ms / 86400e3)} d`;
+    }
+    function todayClock(iso) { const d = new Date(iso); return isNaN(d) ? '--:--' : `${todayPad(d.getHours())}:${todayPad(d.getMinutes())}`; }
+    function todayDate(iso) { const d = new Date(iso); return isNaN(d) ? '?' : `${d.getFullYear()}-${todayPad(d.getMonth() + 1)}-${todayPad(d.getDate())} ${todayClock(iso)}`; }
+    const todayPct = (num, den) => (den ? `${Math.round((num / den) * 100)}% (${num} of ${den})` : `n/a (0 shown)`);
+    function todayMutedUntil(hash) { const u = todayData && todayData.mutes && todayData.mutes.items ? todayData.mutes.items[hash] : null; return u && Date.parse(u) > Date.now() ? u : null; }
+    function todaySet(id, ...kids) { const n = document.getElementById(id); n.replaceChildren(...kids.flat().filter((k) => k != null)); return n; }
+    const todayEmpty = (text) => el('div', { className: 'today-empty' }, text);
+
+    async function loadToday() {
+      try {
+        const res = await fetch('/api/opening-move');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        todayData = await res.json();
+        renderToday();
+      } catch (err) {
+        todaySet('today-top', `Could not read the Opening Move state: ${err.message}`);
+      }
+    }
+
+    async function todayPost(route, body, okText) {
+      try {
+        const res = await fetch(`/api/opening-move/${route}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(out.error || `HTTP ${res.status}`);
+        if (okText) showToast(okText, 'success');
+        await loadToday();
+        return out;
+      } catch (err) {
+        showToast(`Not saved: ${err.message}`, 'error');
+        return null;
+      }
+    }
+
+    function renderToday() {
+      const t = todayData || {};
+      const d = t.digest;
+      const now = Date.now();
+      const reds = d && Array.isArray(d.red) ? d.red.filter((x) => x && x.text) : [];
+      // A guard-class red (a security leg false) is never muted, by the brief or here.
+      const mutedReds = reds.filter((x) => x.hash && x.guardClass !== true && todayMutedUntil(x.hash));
+      const fixed = d && Array.isArray(d.fixed) ? d.fixed : [];
+      const fixedOk = fixed.filter((f) => f && f.ok === true);
+
+      // Top line: one sentence a stranger can read, every number with its denominator.
+      if (!d) {
+        todaySet('today-top', 'No digest yet: the 06:50 job has not run; Refresh digest builds one now.');
+        todaySet('today-sub', 'The digest is jobs/opening-move-digest.cjs: it reads 8 sources (doctor, guard canary, job contracts, repos, CI, hook errors, learning, fixture) and writes digest.json.');
+      } else {
+        const src = d.sources && typeof d.sources === 'object' ? Object.entries(d.sources) : [];
+        const okSrc = src.filter(([, x]) => x && x.ok === true).length;
+        const scanned = src.reduce((a, [, x]) => a + (x && Number.isFinite(x.count) ? x.count : 0), 0);
+        const fxRan = d.sources && d.sources.fixture && d.sources.fixture.ok === true && d.fixture && Number.isFinite(d.fixture.found);
+        const fx = fxRan ? `fixture ${d.fixture.found} of ${d.fixture.of}` : 'fixture not run';
+        todaySet('today-top', `Digest ${todayClock(d.ts)}: ${okSrc} of ${src.length} sources, ${scanned} items scanned; ${fx}. ${fixedOk.length} fixed for you, ${reds.length - mutedReds.length} red, ${mutedReds.length} muted.`);
+        const notOk = src.filter(([, x]) => !(x && x.ok === true)).map(([n, x]) => `${n} ${x && x.skipped ? `skipped (${x.skipped})` : x && x.error ? `failed (${x.error})` : 'not ok'}`);
+        const missed = fxRan && Array.isArray(d.fixture.missed) && d.fixture.missed.length ? ` The fixture missed: ${d.fixture.missed.join(', ')}, so a clean verdict is unverified.` : '';
+        todaySet('today-sub', `Built ${todayAgo(now - Date.parse(d.ts))} ago (${d.from === 'session' ? 'refreshed by a session' : 'scheduled run'}, ${Math.round((d.ms || 0) / 1000)} s).${notOk.length ? ` Not counted: ${notOk.join('; ')}.` : ''}${missed}`);
+      }
+
+      // Red now
+      todaySet('today-red-count', d ? `${reds.length - mutedReds.length} of ${reds.length} shown, ${mutedReds.length} muted` : 'no digest');
+      if (!d) todaySet('today-red', todayEmpty('No digest yet, so nothing is known to be red. Refresh digest builds one now.'));
+      else if (!reds.length) todaySet('today-red', todayEmpty(`Nothing red: the digest found 0 red items across its ${Object.keys(d.sources || {}).length} sources.`));
+      else todaySet('today-red', reds.map((x) => {
+        const guard = x.guardClass === true;
+        const until = x.hash && !guard ? todayMutedUntil(x.hash) : null;
+        const age = x.ageMs > 0 ? `${todayAgo(x.ageMs + (now - Date.parse(d.ts)))} old` : 'new in this digest';
+        const btn = guard ? el('span', { className: 'tag tag-danger' }, 'guard: cannot be muted')
+          : !x.hash ? el('span', { className: 'tag' }, 'no stable hash, cannot mute')
+          : until ? el('button', { className: 'btn', onclick: () => todayPost('mute', { scope: 'item', key: x.hash, restore: true }, 'Unmuted: the next session start shows it again.') }, 'Unmute')
+          : el('button', { className: 'btn', onclick: () => todayPost('mute', { scope: 'item', key: x.hash, days: 7 }, 'Muted for 7 days: the next session start leaves it out.') }, 'Mute 7 days');
+        return el('div', { className: 'rec-item', style: until ? 'opacity: 0.6;' : null, 'data-hash': x.hash || null },
+          el('div', { style: 'flex: 1; min-width: 0;' },
+            el('div', { className: 'today-row-text' }, String(x.text)),
+            el('div', { className: 'today-row-meta' },
+              el('span', null, age),
+              el('span', null, `source: ${x.source || 'unknown'}`),
+              x.kind ? el('span', { className: 'tag' }, String(x.kind)) : null,
+              x.guardClass === true ? el('span', { className: 'tag tag-danger' }, 'guard') : null,
+              until ? el('span', { className: 'tag tag-warning' }, `muted until ${todayDate(until)}`) : null)),
+          btn);
+      }));
+
+      // Fixed for you
+      todaySet('today-fixed-count', d ? `${fixedOk.length} of ${fixed.length} repairs worked` : 'no digest');
+      if (!d) todaySet('today-fixed', todayEmpty('No digest yet, so no repair has run.'));
+      else if (!fixed.length) todaySet('today-fixed', todayEmpty(`Nothing needed fixing: 0 of the 3 allowlisted repairs (rules-drift, links, install-differs) were needed in this digest${d.repair && d.repair.skipped ? `; repairs were skipped (${d.repair.skipped})` : ''}.`));
+      else todaySet('today-fixed', fixed.map((f) => el('div', { className: 'rec-item' },
+        el('div', { style: 'flex: 1; min-width: 0;' },
+          el('div', { className: 'today-row-text' }, `${f.finding}: ${f.action || ''}`),
+          el('div', { className: 'today-row-meta' }, el('span', null, `before ${f.before}, after ${f.after}`), f.ts ? el('span', null, todayDate(f.ts)) : null)),
+        el('span', { className: f.ok ? 'tag tag-success' : 'tag tag-danger' }, f.ok ? 'fixed' : 'repair failed'))));
+
+      // NEXT kinds
+      const stats = Array.isArray(t.stats) ? t.stats : [];
+      const demoted = stats.filter((s) => s.state === 'demoted').length;
+      todaySet('today-kinds-count', `${stats.length} kinds, ${demoted} demoted`);
+      if (!stats.length) todaySet('today-kinds', todayEmpty('No NEXT shown yet: the ledger has 0 brief rows in the last 14 days. Each session start adds one.'));
+      else todaySet('today-kinds',
+        el('table', null,
+          el('thead', null, el('tr', null, ['Kind', 'Shown 7 d', 'Taken 7 d', 'Ignored 7 d', 'Still open 7 d', 'Shown 14 d', 'Taken 14 d', 'Take rate 14 d', 'State', ''].map((hd) => el('th', null, hd)))),
+          el('tbody', null, stats.map((s) => el('tr', null,
+            el('td', null, String(s.kind)),
+            [s.shown7, s.taken7, s.ignored7, s.open7, s.shown14, s.taken14].map((n) => el('td', { className: 'num' }, String(n))),
+            el('td', { className: 'num' }, todayPct(s.taken14, s.shown14)),
+            el('td', null, el('span', { className: s.state === 'demoted' ? 'tag tag-warning' : 'tag tag-success' }, s.state)),
+            el('td', { style: 'text-align: right;' }, s.state === 'demoted'
+              ? el('button', { className: 'btn', onclick: () => todayPost('mute', { scope: 'kind', key: s.kind, restore: true }, `Restored ${s.kind}: it can be NEXT again.`) }, 'Restore')
+              : el('button', { className: 'btn', onclick: () => todayPost('mute', { scope: 'kind', key: s.kind, restore: false }, `Demoted ${s.kind}: it moves to the brief's "also" line.`) }, 'Demote')))))),
+        el('div', { className: 'today-note' }, 'A demoted kind is never NEXT; the brief lists it on its "also (demoted)" line. A kind shown 10 or more times in 14 days and taken under 20% of the time is demoted automatically.'));
+
+      // Verify gate
+      const v = t.verify || { wouldBlock7: 0, nudged7: 0, mode: 'shadow' };
+      const c = t.nextCoverage || { finals: 0, withNext: 0 };
+      todaySet('today-gate-mode', `mode: ${v.mode}`);
+      todaySet('today-verify',
+        el('div', { className: 'today-big' }, `nudged ${v.nudged7} of ${v.wouldBlock7} would-blocks (7 d)`),
+        el('div', { className: 'today-note' }, v.wouldBlock7
+          ? 'A would-block is a turn that edited code and ended with no passing check after the edit. It counts as nudged when the gate blocked it (enforce) or you asked "did you test" next (shadow).'
+          : 'No would-blocks in 7 days: turn-close.cjs logs one when a turn edits code and ends with no passing check after the edit.'),
+        el('div', { className: 'today-big', style: 'margin-top: 14px;' }, `Next line on ${c.withNext} of ${c.finals} final messages (7 d)`),
+        el('div', { className: 'today-note' }, c.finals
+          ? 'Each reply that closes a turn you started should end with a "Next (me|you|wait|none): ..." line; the next session resumes from it.'
+          : 'No final messages logged in 7 days: turn-close.cjs writes one row per reply that closes a turn you started.'));
+
+      // Settings: each control saves on change and re-renders.
+      const s = t.settings || { enabled: true, repair: true, verifyGate: 'shadow' };
+      const toggle = (key, on, label, hint) => el('div', { className: 'today-setting' },
+        el('div', null, el('div', { style: 'font-weight: 600;' }, label), el('div', { className: 'today-note', style: 'margin-top: 2px;' }, hint)),
+        el('label', { className: 'switch', title: on ? 'on' : 'off' },
+          el('input', { type: 'checkbox', 'data-setting': key, ...(on ? { checked: '' } : {}), onchange: (e) => todayPost('settings', { [key]: e.target.checked }, `${label}: ${e.target.checked ? 'on' : 'off'}.`) }),
+          el('span', { className: 'slider' })));
+      const gate = el('select', { className: 'select-dropdown', 'data-setting': 'verifyGate', onchange: (e) => todayPost('settings', { verifyGate: e.target.value }, `Verify gate: ${e.target.value}.`) },
+        ['off', 'shadow', 'enforce'].map((m) => el('option', { value: m, ...(m === s.verifyGate ? { selected: '' } : {}) }, m)));
+      todaySet('today-settings',
+        toggle('enabled', s.enabled, 'Opening move', s.enabled ? 'On: every session start prints the brief.' : 'Off: a session start prints only "[opening-move] off (dashboard toggle)".'),
+        toggle('repair', s.repair, 'Auto-repair', 'The digest may run its 3 allowlisted repairs (rules-drift, links, install-differs) and verify each.'),
+        el('div', { className: 'today-setting' },
+          el('div', null, el('div', { style: 'font-weight: 600;' }, 'Verify gate'), el('div', { className: 'today-note', style: 'margin-top: 2px;' }, 'off: nothing. shadow: log a would-block row. enforce: hold the reply once until a check passes.')),
+          gate),
+        t.mutes && t.mutes.all ? el('div', { className: 'today-note', style: 'color: var(--warning);' }, 'Every brief is muted (mutes.json all: true).') : null);
+    }
+
+    async function refreshTodayDigest() {
+      const before = todayData && todayData.digest ? todayData.digest.ts : null;
+      const btn = document.getElementById('today-refresh-btn');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/opening-move/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        const out = await res.json().catch(() => ({}));
+        if (!out.started) { showToast(`Digest not started: ${out.reason || `HTTP ${res.status}`}.`, 'warning'); return; }
+        showToast(`Digest refresh started (pid ${out.pid}); it takes 20 to 40 s and this tab reloads when it lands.`, 'info');
+        for (let i = 0; i < 24; i++) {
+          await new Promise((r) => setTimeout(r, 5000));
+          await loadToday();
+          if (todayData && todayData.digest && todayData.digest.ts !== before) { showToast('New digest loaded.', 'success'); return; }
+        }
+        showToast('The refresh has not written a new digest after 2 min.', 'warning');
+      } catch (err) {
+        showToast(`Refresh failed: ${err.message}`, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
     // Event listeners
     // One request per typing pause, not one per keystroke.
     let errorSearchTimer = null;
@@ -3160,6 +3406,7 @@ Overwrite them with the SSOT now?`
 
     // Initial load
     loadOverview();
+    loadToday();
   </script>
 </body>
 </html>
