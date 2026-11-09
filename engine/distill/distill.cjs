@@ -17,6 +17,7 @@ const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
 const { auditRuleBudget, pushToExamples, MAX_CORE_PRINCIPLES } = require('./prune.cjs');
+const { stateOf, canTransition, assertTransition, allowedNext } = require('./ladder.cjs');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const STORAGE = process.env.AGNOSTIC_STORAGE || path.join(ROOT, 'storage');
@@ -24,6 +25,7 @@ const CANDIDATES_FILE = path.join(STORAGE, 'candidates.jsonl');
 const CORRECTIONS_FILE = path.join(STORAGE, 'corrections.jsonl');
 const PROPOSAL_FILE = path.join(STORAGE, 'distill-PROPOSAL.md');
 const DIGEST_FILE = path.join(STORAGE, 'distill-digest.json');
+const DELETED_FILE = path.join(STORAGE, 'deleted-candidates.json');
 const CORE_RULES_FILE = path.join(ROOT, 'core', 'rules', 'global-rules.md');
 const LEARNED_HEADING = '## Learned Rules (Self-Promoted via Distillation Ladder)';
 
@@ -48,6 +50,19 @@ function loadCandidates() {
     } catch (_) {}
   }
   return map;
+}
+
+// Same parse as harvest.cjs loadDeletedIds. Kept local on purpose: requiring
+// harvest.cjs at load would pin its STORAGE in require.cache, which breaks
+// tests that re-require distill against a temp AGNOSTIC_STORAGE (run-all 4b).
+function loadDeletedIds() {
+  if (!fs.existsSync(DELETED_FILE)) return new Set();
+  try {
+    const raw = JSON.parse(fs.readFileSync(DELETED_FILE, 'utf8'));
+    return new Set(Array.isArray(raw) ? raw : Object.keys(raw));
+  } catch (_) {
+    return new Set();
+  }
 }
 
 function saveCandidates(map) {
@@ -98,6 +113,7 @@ function runDistillation() {
   const candidates = loadCandidates();
   const corrections = harvestCorrections();
   const repoErrors = harvestRepoErrors();
+  const deleted = loadDeletedIds();
 
   const observations = [];
   const promotedFacts = [];
@@ -108,6 +124,8 @@ function runDistillation() {
   // 1. Process Corrections
   for (const cor of corrections) {
     const fp = hashFingerprint(cor.correction);
+    // Tombstoned is terminal (LADDER_TRANSITIONS.tombstoned is []): a deleted id never comes back.
+    if (deleted.has(fp)) continue;
     const existing = candidates.get(fp) || {
       id: fp,
       text: cor.correction,
@@ -128,6 +146,8 @@ function runDistillation() {
   // 2. Process Documented Errors
   for (const err of repoErrors) {
     const fp = hashFingerprint(err.title);
+    // Tombstoned is terminal (LADDER_TRANSITIONS.tombstoned is []): a deleted id never comes back.
+    if (deleted.has(fp)) continue;
     const existing = candidates.get(fp) || {
       id: fp,
       text: err.title,
@@ -148,13 +168,17 @@ function runDistillation() {
     const count = item.sightingDays.length;
 
     // Gate 0 -> 1: Repo Fact (Single sighting with named repo context)
-    if (item.tier === 0 && item.repo && count >= 1) {
+    if (stateOf(item) === 'observation' && item.repo && count >= 1) {
+      assertTransition('observation', 'fact', item);
       item.tier = 1;
       promotedFacts.push(item);
     }
 
-    // Gate 1 -> 2: Universal Rule check (3+ sightings on 3+ distinct days)
-    if (item.tier <= 1 && count >= 3) {
+    // Gate 1 -> 2: Universal Rule check (3+ sightings on 3+ distinct days).
+    // Only observation or fact may be proposed; dropped, trait and promoted rows
+    // have no proposed edge, and an already-proposed row is not re-proposed.
+    const state = stateOf(item);
+    if (state !== 'proposed' && canTransition(state, 'proposed', item)) {
       rawRuleCandidates.push(item);
     } else if (count === 2 && item.tier === 1) {
       refusedItems.push({
@@ -173,6 +197,7 @@ function runDistillation() {
 
     if (analysis.recommendation === 'promote_rule') {
       if (candidateRules.length < 2) {
+        assertTransition(stateOf(item), 'proposed', item);
         item.tier = 2;
         candidateRules.push(item);
       } else {
@@ -279,6 +304,14 @@ function approveCandidate(id, rulesFile = CORE_RULES_FILE) {
   const candidates = loadCandidates();
   const item = candidates.get(id);
   if (!item) return { ok: false, reason: 'unknown-candidate', id };
+  // The ladder decides before any rules-file read or write. promoted -> promoted
+  // is identity, so the idempotent re-approve path below is unchanged.
+  const current = stateOf(item);
+  if (!canTransition(current, 'promoted', item)) {
+    let message = '';
+    try { assertTransition(current, 'promoted', item); } catch (err) { message = err.message; }
+    return { ok: false, reason: 'illegal_transition', id, current, requested: 'promoted', allowed: allowedNext(item), message };
+  }
   if (!fs.existsSync(rulesFile)) return { ok: false, reason: 'missing-rules-file', path: rulesFile };
 
   const text = String(item.text || '').trim();
@@ -307,7 +340,7 @@ function approveCandidate(id, rulesFile = CORE_RULES_FILE) {
 
   if (md.slice(headIdx, insertAt).includes(text)) {
     markPromoted();
-    return { ok: true, id, alreadyPresent: true, path: rulesFile };
+    return { ok: true, id, alreadyPresent: true, path: rulesFile, state: stateOf(item), allowed_next: allowedNext(item) };
   }
 
   const labels = md.match(/^- \*\*L(\d+)\b/gm) || [];
@@ -320,7 +353,7 @@ function approveCandidate(id, rulesFile = CORE_RULES_FILE) {
 
   fs.writeFileSync(rulesFile, `${before}\n${bullet}${after ? '\n' + after : ''}`, 'utf8');
   markPromoted();
-  return { ok: true, id, label, path: rulesFile, appended: bullet.trim() };
+  return { ok: true, id, label, path: rulesFile, appended: bullet.trim(), state: stateOf(item), allowed_next: allowedNext(item) };
 }
 
 if (require.main === module) {
@@ -333,6 +366,11 @@ if (require.main === module) {
     if (res.ok) {
       console.log(`[Distill] Approved ${id}${res.alreadyPresent ? ' (already present — no change)' : ` as ${res.label}`} -> ${res.path}`);
       console.log('  Next: node engine/sync/sync.cjs');
+    } else if (res.reason === 'illegal_transition') {
+      // Exit 2 = refused by the ladder; exit 1 = broken (unknown id, missing file).
+      console.error(`[Distill] Approve refused for ${id}: ${res.message}`);
+      console.error(JSON.stringify({ error: 'illegal_transition', current: res.current, requested: res.requested, allowed: res.allowed }));
+      process.exit(2);
     } else {
       console.error(`[Distill] Approve failed for ${id}: ${res.reason}`);
     }

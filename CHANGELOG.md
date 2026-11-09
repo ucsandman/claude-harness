@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### 2026-11-08: the distillation ladder refuses moves it has no edge for
+
+- `engine/distill/ladder.cjs` (new): the candidate lifecycle as one table
+  (observation, fact, proposed, promoted, trait, dropped, tombstoned) with a
+  3-distinct-day gate into proposed and promoted. State is derived from the
+  stored tier, status and promoted flag; no field is added or rewritten.
+- Closed edges: approve from observation, dropped or trait, or under 3 days
+  (it used to append an L-rule from any record); the distiller lifting or
+  proposing dropped rows and resurrecting tombstoned ids from
+  `corrections.jsonl`; arbitrary tier edits (promoted demotion, any -> trait,
+  out-of-range tiers). Same-tier saves stay legal in every state.
+- Contract: `POST /api/candidate/update` and `/approve` answer 409
+  `{error:'illegal_transition', current, requested, allowed, message}`;
+  `distill.cjs --approve` prints the refusal plus a JSON line and exits 2
+  (other failures stay exit 1). Candidate reads gain `state`, `state_label`
+  and `allowed_next`; the dashboard builds its tier options and the Approve
+  button from `allowed_next`. `engine/tests/reg-ladder.cjs` pins it.
+
 ### 2026-11-08: the fan-out ceiling regex could never see `const MAX_AGENTS`
 
 - `engine/hooks/agent-model-guard.cjs`: the `\bMAX_AGENTS\s*=` alternative

@@ -22,7 +22,7 @@
     "sync": "node engine/sync/all.cjs",
     "sync:check": "node engine/sync/all.cjs --check",
     "distill": "node engine/distill/distill.cjs",
-    "test": "node engine/tests/run-all.cjs && node engine/tests/reg-sync.cjs && node engine/tests/reg-hooks.cjs && node engine/tests/reg-hook-protocol.cjs && node engine/tests/reg-hook-install.cjs && node engine/tests/reg-harness.cjs && node engine/tests/reg-capabilities.cjs && node engine/tests/reg-context.cjs",
+    "test": "node engine/tests/run-all.cjs && node engine/tests/reg-sync.cjs && node engine/tests/reg-hooks.cjs && node engine/tests/reg-hook-protocol.cjs && node engine/tests/reg-hook-install.cjs && node engine/tests/reg-harness.cjs && node engine/tests/reg-capabilities.cjs && node engine/tests/reg-context.cjs && node engine/tests/reg-ladder.cjs",
     "docs:targets": "node engine/docs/targets-doc.cjs",
     "docs:check": "node engine/docs/targets-doc.cjs --check",
     "merge": "node engine/ingest/merge.cjs",

@@ -89,6 +89,14 @@ const { runDistillation, approveCandidate } = require('../../engine/distill/dist
 const { calculateLocalRisk, riskThresholds } = require('../../engine/hooks/dashclaw-guard.cjs');
 const { auditHarnessBloat, applyBloatOptimizations } = require('../../engine/audit/bloat-audit.cjs');
 const { getParityStatus } = require('../sync/parity.cjs');
+const { stateOf, allowedNext, LADDER_STATE_LABELS, STATE_TIER } = require('../../engine/distill/ladder.cjs');
+
+// Additive read fields so a human or an agent sees the ladder state and the
+// legal next moves without re-deriving them. Nothing here is stored.
+function withLadder(c) {
+  const state = stateOf(c);
+  return { ...c, state, state_label: LADDER_STATE_LABELS[state], allowed_next: allowedNext(c) };
+}
 
 function getOverviewData() {
   const digestFile = path.join(STORAGE, 'distill-digest.json');
@@ -161,7 +169,7 @@ function getErrorsData(query = {}) {
 
   return {
     total: items.length,
-    items: items.slice(0, 500) // cap for smooth rendering
+    items: items.slice(0, 500).map(withLadder) // cap for smooth rendering
   };
 }
 
@@ -496,7 +504,9 @@ let cachedPage;
 function renderPage() {
   if (cachedPage === undefined) {
     cachedPage = fs.existsSync(HTML_FILE)
-      ? fs.readFileSync(HTML_FILE, 'utf8').replace('__DASHBOARD_TOKEN__', SESSION_TOKEN)
+      ? fs.readFileSync(HTML_FILE, 'utf8')
+        .replace('__DASHBOARD_TOKEN__', SESSION_TOKEN)
+        .replace('__LADDER_DATA__', () => JSON.stringify({ labels: LADDER_STATE_LABELS, tiers: STATE_TIER }))
       : null;
   }
   return cachedPage;
@@ -555,15 +565,17 @@ function serveDashboard() {
         if (!id) return sendJson({ error: 'Missing candidate id' }, 400);
         const item = getCandidate(id);
         if (!item) return sendJson({ error: 'Candidate not found' }, 404);
-        return sendJson(item);
+        return sendJson(withLadder(item));
       }
       if (req.method === 'POST' && pathname === '/api/candidate/update') {
         const body = await readBody();
         if (!body.id) return sendJson({ error: 'Missing candidate id' }, 400);
         try {
           const updated = updateCandidate(body.id, body);
-          return sendJson({ success: true, item: updated });
+          return sendJson({ success: true, item: withLadder(updated) });
         } catch (err) {
+          // A move the ladder refuses is a conflict with the record's state, not a bad request.
+          if (err && err.code === 'illegal_transition') return sendJson(err.toJSON(), 409);
           return sendJson({ error: err.message }, 400);
         }
       }
@@ -586,6 +598,10 @@ function serveDashboard() {
           const resObj = approveCandidate(body.id);
           // approveCandidate reports failure in the payload; a 200 there would
           // let the UI show a success toast for a rule that was never written.
+          if (resObj.reason === 'illegal_transition') {
+            const { current, requested, allowed, message } = resObj;
+            return sendJson({ error: 'illegal_transition', current, requested, allowed, message }, 409);
+          }
           if (resObj.ok === false) return sendJson({ error: resObj.reason, ...resObj }, 400);
           return sendJson(resObj);
         } catch (err) {

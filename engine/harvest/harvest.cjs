@@ -25,6 +25,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
+const { stateOf, stateForTier, assertTransition } = require('../distill/ladder.cjs');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const STORAGE = process.env.AGNOSTIC_STORAGE || path.join(ROOT, 'storage');
@@ -122,7 +123,15 @@ function updateCandidate(id, updates = {}) {
     existing.text = updates.text.trim();
   }
   if (updates.tier !== undefined && updates.tier !== null) {
-    existing.tier = Number(updates.tier);
+    // Same tier is not a transition, so field edits work in every state. A new
+    // tier must be a ladder edge; the throw lands before saveCandidatesMap, so
+    // a refused update persists nothing.
+    const tier = Number(updates.tier);
+    if (tier !== existing.tier) {
+      // Outside TIER_VALUES stateForTier is undefined; name the raw value so the refusal says what was asked.
+      assertTransition(stateOf(existing), stateForTier(tier) || `tier ${updates.tier}`, existing);
+      existing.tier = tier;
+    }
   }
   if (updates.kind) {
     existing.kind = String(updates.kind).trim();

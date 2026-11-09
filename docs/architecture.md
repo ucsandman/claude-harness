@@ -118,6 +118,11 @@ promotion ladder and writes `storage/distill-digest.json` and
 | 3 Trait | a disposition in `core/traits/traits.md` | no: hand-curated |
 | E Example | failure converted to a few-shot fixture in `core/examples/` | yes (`prune.cjs`) |
 
+The lifecycle and its legal moves live in `engine/distill/ladder.cjs`
+(states observation, fact, proposed, promoted, trait, dropped, tombstoned);
+every tier writer calls `assertTransition`, and a refused move is HTTP 409 from
+the dashboard or exit 2 from `distill.cjs --approve`.
+
 `engine/ingest/merge.cjs` pulls lessons from project-level `CLAUDE.md` /
 `AGENTS.md` / `GEMINI.md` files back into the rules.
 

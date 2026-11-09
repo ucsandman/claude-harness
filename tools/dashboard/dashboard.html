@@ -1552,12 +1552,8 @@ dashclaw install claude --trial</code></pre>
         <div class="form-grid" style="margin-top: 4px;">
           <div class="form-group">
             <label class="form-label" for="c-edit-tier">Distillation Tier</label>
-            <select id="c-edit-tier" class="form-input">
-              <option value="0">T0 · Observation (Raw sighting under observation)</option>
-              <option value="1">T1 · Repo Fact (Project-specific quirk)</option>
-              <option value="2">T2 · Candidate Rule (Universal multi-day constraint)</option>
-              <option value="3">T3 · Core Trait (Universal philosophical disposition)</option>
-            </select>
+            <!-- Options are built per candidate from its legal next states (engine/distill/ladder.cjs). -->
+            <select id="c-edit-tier" class="form-input"></select>
           </div>
 
           <div class="form-group">
@@ -1609,7 +1605,7 @@ dashclaw install claude --trial</code></pre>
         </div>
         <div style="display: flex; gap: 10px; align-items: center;">
           <button class="btn" onclick="closeCandidateEditModal()">Cancel</button>
-          <button class="btn btn-accent" onclick="approveCandidateFromModal()" title="Write this rule into core/rules/global-rules.md (the SSOT) and queue it for sync to all targets">✅ Approve &amp; Promote</button>
+          <button id="c-edit-approve" class="btn btn-accent" onclick="approveCandidateFromModal()" title="Write this rule into core/rules/global-rules.md (the SSOT) and queue it for sync to all targets">✅ Approve &amp; Promote</button>
           <button class="btn btn-primary" onclick="saveCandidateFromModal()">💾 Save Changes</button>
         </div>
       </div>
@@ -1722,10 +1718,16 @@ dashclaw install claude --trial</code></pre>
   <!-- Toast Notification Container -->
   <div id="toast-container"></div>
 
+  <!-- Ladder labels and tiers, injected by dashboard.cjs from engine/distill/ladder.cjs. -->
+  <script type="application/json" id="ladder-data">__LADDER_DATA__</script>
+
   <script>
     // Injected by dashboard.cjs when it serves this page. Wrapped once here so
     // every same-origin fetch below carries it without per-call plumbing.
     const DASHBOARD_TOKEN = '__DASHBOARD_TOKEN__';
+    // Unserved (file opened directly) the placeholder is not JSON; fall back to empty.
+    let LADDER = { labels: {}, tiers: {} };
+    try { LADDER = JSON.parse(document.getElementById('ladder-data').textContent); } catch (_) {}
     const nativeFetch = window.fetch.bind(window);
     window.fetch = (input, opts = {}) => {
       const url = typeof input === 'string' ? input : (input && input.url) || '';
@@ -2405,7 +2407,8 @@ dashclaw install claude --trial</code></pre>
           cachedCandidatesMap[item.id] = item;
         }
 
-        const tierLabels = ['T0 · Observation', 'T1 · Repo Fact', 'T2 · Universal Rule', 'T3 · Trait'];
+        // Card tag colour per ladder state; the text is the server's state_label.
+        const stateTagClass = { fact: 'tag-accent', proposed: 'tag-warning', promoted: 'tag-success', dropped: 'tag-danger' };
 
         // The server caps the payload; say so rather than let the list read as the whole match.
         const capped = data.total > data.items.length
@@ -2417,7 +2420,7 @@ dashclaw install claude --trial</code></pre>
             <div class="candidate-header">
               <div class="candidate-text">${escapeHtml(item.text)}</div>
               <div class="candidate-actions" onclick="event.stopPropagation()">
-                <span class="tag ${item.tier === 2 ? 'tag-warning' : item.tier === 1 ? 'tag-accent' : ''}">${tierLabels[item.tier || 0]}</span>
+                <span class="tag ${stateTagClass[item.state] || ''}">${escapeHtml(item.state_label || LADDER.labels[item.state] || '')}</span>
                 <button class="btn-icon-subtle" title="Edit observation" onclick="openCandidateEditModal('${item.id}')">✏️ Edit</button>
                 <button class="btn-icon-subtle delete" title="Delete permanently (never resurface)" onclick="deleteCandidatePrompt('${item.id}')">🗑️</button>
               </div>
@@ -2458,7 +2461,20 @@ dashclaw install claude --trial</code></pre>
       document.getElementById('c-edit-id').value = item.id;
       document.getElementById('c-edit-id-badge').textContent = item.id;
       document.getElementById('c-edit-text').value = item.text || '';
-      document.getElementById('c-edit-tier').value = String(item.tier || 0);
+      // Only the current state and its legal next tier moves are offered, so an
+      // impossible move is never a choice. The current option keeps the stored
+      // tier, which makes a plain Save an identity move in every state.
+      const tierSelectable = ['observation', 'fact', 'proposed'];
+      const tierSelect = document.getElementById('c-edit-tier');
+      const tierOptions = ['observation', 'fact', 'proposed', 'promoted', 'trait', 'dropped']
+        .filter(s => s === item.state || (tierSelectable.includes(s) && (item.allowed_next || []).includes(s)))
+        .map(s => {
+          const value = s === item.state ? (typeof item.tier === 'number' ? item.tier : 0) : LADDER.tiers[s];
+          return `<option value="${value}"${s === item.state ? ' selected' : ''}>${escapeHtml(LADDER.labels[s] || item.state_label || s)}</option>`;
+        });
+      tierSelect.innerHTML = tierOptions.join('');
+      tierSelect.disabled = tierOptions.length <= 1;
+      document.getElementById('c-edit-approve').style.display = (item.allowed_next || []).includes('promoted') ? '' : 'none';
       document.getElementById('c-edit-kind').value = item.kind || 'deviation';
       document.getElementById('c-edit-bucket').value = item.bucket || '';
       document.getElementById('c-edit-repo').value = item.repo || '';
@@ -2508,7 +2524,8 @@ dashclaw install claude --trial</code></pre>
         });
         const out = await res.json();
         if (out.error) {
-          throw new Error(out.error);
+          // A 409 is a ladder refusal; its message names the reason and the allowed moves.
+          throw new Error(res.status === 409 && out.message ? out.message : out.error);
         }
 
         closeCandidateEditModal();
@@ -2535,7 +2552,7 @@ dashclaw install claude --trial</code></pre>
         });
         const out = await res.json();
         if (!res.ok || out.error || out.ok === false) {
-          throw new Error(out.error || out.reason || ('HTTP ' + res.status));
+          throw new Error((res.status === 409 && out.message) || out.error || out.reason || ('HTTP ' + res.status));
         }
         closeCandidateEditModal();
         showToast('✓ Rule promoted to global-rules.md. Run Sync to distribute it.', 'success');
@@ -2551,7 +2568,11 @@ dashclaw install claude --trial</code></pre>
       const id = candidateId || document.getElementById('c-edit-id').value;
       if (!id) return;
 
-      const confirmed = confirm("Are you sure you want to permanently delete this observation?\n\nIt will be tombstoned so it never resurfaces, even when re-harvesting logs.");
+      const target = cachedCandidatesMap[id];
+      const ruleNote = target && target.state === 'promoted'
+        ? "\n\nIts L-rule stays in core/rules/global-rules.md; remove it there by hand."
+        : '';
+      const confirmed = confirm("Are you sure you want to permanently delete this observation?\n\nIt will be tombstoned so it never resurfaces, even when re-harvesting logs." + ruleNote);
       if (!confirmed) return;
 
       try {
