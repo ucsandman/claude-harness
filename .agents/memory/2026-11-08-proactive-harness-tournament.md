@@ -1,5 +1,7 @@
 # Opening Move: final spec (tournament result, grafts folded in)
 
+> **Step 0 result (2026-11-08, Claude Code 2.1.319, observed by Wes):** the hand-built brief was wired through a throwaway SessionStart hook in `.claude/settings.local.json` and shown in a fresh session. `systemMessage` renders as a line under the banner ("SessionStart:startup says: Opening move, agnostic-ai: 1 red, 1 fixed for you …"). `sessionTitle` has no effect: the tab title stayed "Claude Code". Drop `sessionTitle` from §2.2 and from the output contract; the one-line `systemMessage` carries the headline and `additionalContext` carries the body. Two red items the sample named were real: the nightly meditation blackout (fixed the same night in discovery-loop `d18c18f`) and the reserved plugin name `claude-runtime` (the brief's NEXT).
+
 ## 1. Ranking
 
 Four judges scored the candidates; the maximum total is 240. All four judges ranked Opening Move first.
