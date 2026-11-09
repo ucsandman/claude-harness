@@ -169,7 +169,7 @@ stop saying "Waiting.": [prompt-dispatch.md](prompt-dispatch.md).
 ## turn-close.cjs (2026-11-09)
 
 `Stop`, cli only; replaced `forced-verify-stop-gate.cjs`. Stores the closing `Next`
-line for opening-move and flags a code edit with no passing check after it: shadow
+line for [opening-move](opening-move.md) and flags a code edit with no passing check after it: shadow
 (default) logs, enforce blocks once per human prompt; `TURN_CLOSE_MODE=off|shadow|enforce`
 beats `verifyGate` in `config.json`. Spec 2.4 deviation: `|`/`;`/`||`/`&`-masked checks never pass.
 

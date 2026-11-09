@@ -75,10 +75,14 @@ harness makes no network requests for governance.
 ## Scheduled jobs (Windows)
 
 `jobs/port-daily.ps1` runs `npm run port` and the guard probe (the `HarnessParitySync` task; `node jobs/install.cjs --apply` registers it); `jobs/daily-distill.ps1` runs
-harvest + distill and logs to `storage/daily-distill.log`. Register them with
+harvest + distill and logs to `storage/daily-distill.log` (the `DailyDistill`
+task, 07:00); `jobs/opening-move-digest.cjs` writes the Opening Move digest and
+runs its allowlisted repairs (the `OpeningMoveDigest` task, 06:50). Register them with
 Task Scheduler (for example nightly, after whatever job edits your primary
 client's rules) or run them by hand. On other platforms call the same `node`
-commands from cron.
+commands from cron. Every job that leaves an artifact declares `expects: {path, maxAgeH}`
+in `jobs/install.cjs`; `npm run doctor` fails when that artifact is stale
+([opening-move.md](opening-move.md)).
 
 ## Uninstall
 
