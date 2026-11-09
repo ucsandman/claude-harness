@@ -49,12 +49,12 @@ const REVIEW = {
 
 const label = (g) => g.files.map((f) => f.split('/').pop()).join('+')
 const fixer = (g, brief, phase) => agent(
-  a.context + SHARED_TREE + ALL_SITES + '\n\nYOU OWN ONLY THESE FILES: ' + g.files.join(', ') + ' (edit nothing else; if a fix truly needs another file, stop and report it with file:line).\n' + brief +
+  '# EST: 15 calls, ' + g.files.length + ' files\n' + a.context + SHARED_TREE + ALL_SITES + '\n\nYOU OWN ONLY THESE FILES: ' + g.files.join(', ') + ' (edit nothing else; if a fix truly needs another file, stop and report it with file:line).\n' + brief +
   '\nWhere the failure scenario is testable, add a regression test in the existing test file for this module. Run only the tests for this module, foreground, with a timeout; never the full suite.' +
   '\nReturn: what you changed (file:line), every call site you found, tests added, and anything you could not fix and why.',
   { label: (phase === 'Refix' ? 'refix:' : 'fix:') + label(g), phase, model: 'sonnet', agentType: 'sonnet-implementer' })
 const reviewer = (g, report, phase) => agent(
-  a.context + SHARED_TREE + '\n\nREAD ONLY. An implementer just changed ' + g.files.join(', ') + ' to fix these findings:\n' + JSON.stringify(g.items, null, 1) + '\nImplementer report:\n' + report +
+  '# EST: 8 calls, 0 files (read-only review of one group diff)\n' + a.context + SHARED_TREE + '\n\nREAD ONLY. An implementer just changed ' + g.files.join(', ') + ' to fix these findings:\n' + JSON.stringify(g.items, null, 1) + '\nImplementer report:\n' + report +
   '\nRead the current files and their callers (git diff for those paths, and grep for the same behaviour elsewhere). Is every finding fixed at the root, in every file that carries the behaviour, and is nothing newly broken for sibling callers? ' +
   'Default to ok=false if any finding is only patched at one call site, and put the other sites in `files` with the exact change in `problems`. Do not fail a group for another group\'s uncommitted work or for a red suite you did not cause; name it separately.',
   { label: 'review:' + label(g), phase, model: 'opus', agentType: 'opus-owner', schema: REVIEW })
@@ -82,7 +82,7 @@ log(refixed.length + ' groups refixed, ' + stillFlagged.length + ' still flagged
 
 phase('Verify')
 const verify = await agent(
-  a.context + SHARED_TREE + '\n\nRun exactly this command, foreground, with a hard timeout of 10 minutes (wrap it in `timeout 600 ...` on POSIX; on Windows use the Bash tool timeout parameter and note it), and read ALL of its output:\n' + a.verify +
+  '# EST: 3 calls, 0 files (runs the verify command once, fixes nothing)\n' + a.context + SHARED_TREE + '\n\nRun exactly this command, foreground, with a hard timeout of 10 minutes (wrap it in `timeout 600 ...` on POSIX; on Windows use the Bash tool timeout parameter and note it), and read ALL of its output:\n' + a.verify +
   '\nReport pass/fail with the counts printed (tests run/passed/failed, lint errors). If it fails, quote the failing output verbatim. If it hangs past the timeout, that IS a failure: report the last test name printed and say it hung. Do not fix anything.',
   { label: 'verify', phase: 'Verify', model: 'sonnet', agentType: 'sonnet-implementer', effort: 'low' })
 
@@ -101,7 +101,7 @@ const CONVERGE = {
   },
 }
 const converge = await agent(
-  a.context + SHARED_TREE + '\n\nREAD ONLY. A fix pass just closed these findings:\n' + JSON.stringify(a.findings.map((f) => ({ file: f.file, title: f.title })), null, 1) +
+  '# EST: 12 calls, 0 files (read-only pass over the whole diff)\n' + a.context + SHARED_TREE + '\n\nREAD ONLY. A fix pass just closed these findings:\n' + JSON.stringify(a.findings.map((f) => ({ file: f.file, title: f.title })), null, 1) +
   '\nVerify result: ' + String(verify).slice(0, 2000) +
   '\nRead the ENTIRE uncommitted diff (git diff, git status for untracked files) once, as a stranger who did not see the findings. Report only NEW defects: something this pass introduced or exposed that no listed finding covers (a broken sibling caller, a test that now asserts the wrong thing, a duplicated helper left half-migrated, a dead import, a changed contract with an unchanged consumer). ' +
   'Do not re-report the listed findings, do not report style, do not fix anything. converged=true means you read the whole diff and found nothing new; say the number of files you read.',

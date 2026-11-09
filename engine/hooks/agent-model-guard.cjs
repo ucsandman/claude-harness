@@ -455,7 +455,7 @@ if (toolName === "Workflow") {
   const spans = fanoutRanges(script, masked); // `ranges` above is scoped to the fable branch
   const fannedOut = calls.some((c) => spans.some(([s, e]) => c.index >= s && c.index < e));
   if (fannedOut) {
-    const decl = /(?:\/\/\s*MAX_AGENTS\s*:\s*|MAX_AGENTS\s*=\s*)(\d+)/.exec(script);
+    const decl = /(?:\/\/\s*MAX_AGENTS\s*:\s*|\bMAX_AGENTS\s*=\s*)(\d+)/.exec(script);
     if (!decl) {
       deny(
         "BLOCKED: this Workflow script fans agent() out (parallel/pipeline/map/loop) with no declared ceiling. Write the agent count as arithmetic and put it in the script: `// MAX_AGENTS: <producers + items x verifiers + synthesizers>`; cap any term you cannot count (`items.slice(0, N)`, log the drop) and dedup items across producers before a per-item stage. Ceiling " +

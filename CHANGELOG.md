@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### 2026-11-08: the fan-out ceiling regex could never see `const MAX_AGENTS`
+
+- `engine/hooks/agent-model-guard.cjs`: the `\bMAX_AGENTS\s*=` alternative
+  held a literal 0x08 byte where `\b` was meant, so only a numeric
+  `// MAX_AGENTS: N` comment passed and every saved workflow with a prose
+  comment plus a const (tournament) was denied. Byte replaced; the
+  `fanout-probe` gains the const-form case, which the previous guard fails.
+- `workflows/*.js`: every agent prompt now opens with `# EST: <n> calls, <n>
+  files` (the subagent-budget guard denied all twelve tournament candidates
+  without it); `adversarial-review` and `understand` declare MAX_AGENTS as
+  arithmetic with caps (6 dimensions, PER_DIM findings sized to the ceiling,
+  24 readers) and log what they drop.
+- `tools/gates/gates.cjs`: `hook-wiring` reads `~/.claude/settings.json` when
+  the repo root has none, so the gate passes from the harness repo again (44
+  targets checked) instead of failing on "settings.json not found".
+- `docs/ERRORS.md`: the entry.
+
 ### 2026-09-29: the routing Mod prices a spawn's arrival, not its whole run
 
 - `engine/mods/harness-mods/hooks/lib/budget.mjs`: the first `ModelStep` is

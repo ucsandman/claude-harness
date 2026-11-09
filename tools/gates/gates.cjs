@@ -508,8 +508,9 @@ function checkSkillMetadata() {
 function checkHookWiring() {
   const lines = [];
   let ok = true;
-  const settingsPath = path.join(ROOT, 'settings.json');
-  if (!exists(settingsPath)) return { ok: false, lines: ['settings.json not found'] };
+  // Since 2026-09-19 the repo is the harness root and settings.json lives in the Claude home.
+  const settingsPath = [path.join(ROOT, 'settings.json'), path.join(require('os').homedir(), '.claude', 'settings.json')].find(exists);
+  if (!settingsPath) return { ok: false, lines: ['settings.json not found (looked in ' + ROOT + ' and ~/.claude)'] };
   const settings = JSON.parse(read(settingsPath));
   const settingsCommands = [];
   for (const events of Object.values(settings.hooks || {})) {

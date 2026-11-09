@@ -53,7 +53,7 @@ const JUDGE = {
 
 phase('Candidates')
 const candidates = (await parallel(a.lenses.map((l, i) => () =>
-  agent(BRIEF + '\n\nYOUR ASSIGNED DIRECTION #' + (i + 1) + ' — ' + l.angle + '\n\n' + OUTPUT_RULES,
+  agent('# EST: 25 calls, 0 files (read-only research; the brief lists the files)\n\n' + BRIEF + '\n\nYOUR ASSIGNED DIRECTION #' + (i + 1) + ' — ' + l.angle + '\n\n' + OUTPUT_RULES,
     { label: 'candidate:' + l.key, phase: 'Candidates', model: 'opus', agentType: 'opus-owner', schema: CANDIDATE })
 ))).filter(Boolean)
 log(candidates.length + ' of ' + a.lenses.length + ' candidates returned')
@@ -64,7 +64,7 @@ const dossier = candidates.map((c, i) => '=== CANDIDATE ' + (i + 1) + ' ===\n' +
 
 phase('Judging')
 const verdicts = (await parallel(JUDGE_LENSES.map((lens, i) => () =>
-  agent('You are judging a tournament of candidate concepts.\n\n' + BRIEF + '\n\n' + lens + '\n\n' + CRITERIA + '\n\nTHE CANDIDATES:\n\n' + dossier,
+  agent('# EST: 8 calls, 0 files (judging from the dossier; spot-check sources only)\n\nYou are judging a tournament of candidate concepts.\n\n' + BRIEF + '\n\n' + lens + '\n\n' + CRITERIA + '\n\nTHE CANDIDATES:\n\n' + dossier,
     { label: 'judge:' + (i + 1), phase: 'Judging', model: 'opus', agentType: 'opus-owner', schema: JUDGE })
 ))).filter(Boolean)
 log(verdicts.length + ' of ' + JUDGE_LENSES.length + ' judges returned')
@@ -84,7 +84,7 @@ const feedback = verdicts.map((j, i) => 'Judge ' + (i + 1) + ' grafts: ' + j.gra
 
 phase('Synthesis')
 const spec = await agent(
-  BRIEF + '\n\nA tournament ran. THE WINNING CANDIDATE (implement this):\n' + JSON.stringify(champion, null, 1) +
+  '# EST: 20 calls, 0 files (re-reads the sources named in the brief; writes nothing)\n\n' + BRIEF + '\n\nA tournament ran. THE WINNING CANDIDATE (implement this):\n' + JSON.stringify(champion, null, 1) +
   (runnerUp ? '\n\nRUNNER-UP (graft its best ideas where they strengthen the winner without diluting it):\n' + JSON.stringify(runnerUp, null, 1) : '') +
   '\n\nJUDGE FEEDBACK AND REQUESTED GRAFTS:\n' + feedback + '\n\nYOUR JOB: ' + SYNTHESIS_TASK,
   { label: 'synthesis', phase: 'Synthesis', model: 'fable', effort: 'high' }

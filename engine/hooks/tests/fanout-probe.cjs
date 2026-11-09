@@ -26,6 +26,10 @@ const CASES = [
   ['sonnet fan-out with a declared MAX_AGENTS, must ALLOW', 'ALLOW',
    `// MAX_AGENTS: 12
 await parallel(items.map(i => () => agent('x', {model:'claude-sonnet-5'})))`],
+  ['MAX_AGENTS as a const, prose comment (2026-11-08: a backspace byte in the regex denied every saved tournament)', 'ALLOW',
+   `// MAX_AGENTS: lenses + judges + 1; hard ceiling enforced below
+const MAX_AGENTS = 30
+await parallel(items.map(i => () => agent('x', {model:'opus'})))`],
   ['sonnet fan-out with NO MAX_AGENTS declaration (2026-09-19: 225 queued)', 'DENY',
    `await parallel(items.map(i => () => agent('x', {model:'claude-sonnet-5'})))`],
   ['MAX_AGENTS above 40 without FANOUT_OK', 'DENY',

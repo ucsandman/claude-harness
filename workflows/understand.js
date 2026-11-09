@@ -25,16 +25,22 @@ const REPORT = a.schema || {
   },
 }
 
+// MAX_AGENTS: READERS (<=24) + 1 synthesizer = 25
+const MAX_AGENTS = 25
+const READERS = a.readers.slice(0, MAX_AGENTS - 1)
+if (READERS.length < a.readers.length) log('dropped ' + (a.readers.length - READERS.length) + ' reader(s) past the cap of ' + (MAX_AGENTS - 1))
+log('agents planned: ' + READERS.length + ' readers + 1 synthesizer = ' + (READERS.length + 1) + ' (ceiling ' + MAX_AGENTS + ')')
+
 phase('Read')
-const reports = (await parallel(a.readers.map((r) => () =>
-  agent('QUESTION THIS MAP MUST ANSWER: ' + a.question + '\n\nYOUR SUBSYSTEM: ' + r.prompt + '\n\nRead the actual files (Read/Grep). Report only what you verified in the code; cite file:line. Return structured output only.',
+const reports = (await parallel(READERS.map((r) => () =>
+  agent('# EST: 12 calls, 0 files (read-only reader; the prompt names the files)\n\nQUESTION THIS MAP MUST ANSWER: ' + a.question + '\n\nYOUR SUBSYSTEM: ' + r.prompt + '\n\nRead the actual files (Read/Grep). Report only what you verified in the code; cite file:line. Return structured output only.',
     { label: 'read:' + r.label, phase: 'Read', model: 'sonnet', agentType: 'sonnet-implementer', schema: REPORT })
 ))).filter(Boolean)
-log(reports.length + ' of ' + a.readers.length + ' readers returned')
+log(reports.length + ' of ' + READERS.length + ' readers returned')
 
 phase('Synthesize')
 const synthesis = await agent(
-  'You are synthesizing reader reports into one map. QUESTION: ' + a.question + '\n\nREADER REPORTS (JSON): ' + JSON.stringify(reports) +
+  '# EST: 2 calls, 0 files (synthesis from the reports in this prompt)\n\nYou are synthesizing reader reports into one map. QUESTION: ' + a.question + '\n\nREADER REPORTS (JSON): ' + JSON.stringify(reports) +
   '\n\n' + (a.synthesis || 'Produce: (a) a deduplicated master list grouped by subsystem, each item with where it lives; (b) a direct answer to the question with the evidence; (c) implementation constraints an implementer must respect (state variables, entry points, config, gotchas), each citing a file. Well-organized markdown.'),
   { label: 'synthesize', phase: 'Synthesize', model: 'opus', agentType: 'opus-owner', effort: 'high' }
 )
