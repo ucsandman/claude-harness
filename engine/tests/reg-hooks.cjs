@@ -636,14 +636,19 @@ async function run() {
     const none = Object.entries(install.JOBS).filter(([, j]) => !j.expects).map(([n]) => n).sort();
     assert.deepStrictEqual(none, ['ClaudeAgentReaper', 'ClaudeLspReaper', 'Harness Health Monthly', 'WesErrorLog'], 'no expects on the JOBS entry (Harness Health Monthly has its contract in EXPECTS)');
     assert.strictEqual(install.knownJobs().length - install.contracts(TMP_HOME).length, 3, 'reapers and WesErrorLog are counted "no contract"');
+    // Task Scheduler argument strings are Windows paths whatever the host (install.cjs W()), so the
+    // expected text is built the same way; on the ubuntu CI legs path.join alone gives forward slashes.
+    const W = (p) => path.join(ROOT, p).replace(/\//g, '\\');
     const dd = install.JOBS.DailyDistill;
     assert.strictEqual(dd.execute, 'pwsh.exe');
-    assert.strictEqual(dd.args, `-NoProfile -ExecutionPolicy Bypass -File "${path.join(ROOT, 'jobs', 'daily-distill.ps1')}"`);
+    assert.strictEqual(dd.args, `-NoProfile -ExecutionPolicy Bypass -File "${W('jobs/daily-distill.ps1')}"`);
     const om = install.JOBS.OpeningMoveDigest;
     assert.strictEqual(om.execute, process.execPath);
-    assert.strictEqual(om.args, `"${path.join(ROOT, 'jobs', 'opening-move-digest.cjs')}"`);
+    assert.strictEqual(om.args, `"${W('jobs/opening-move-digest.cjs')}"`);
     assert.strictEqual(om.workingDirectory, ROOT);
-    for (const c of install.contracts(TMP_HOME)) assert.ok(path.isAbsolute(c.file) && !/[~<>]/.test(c.file) && (c.file.startsWith(TMP_HOME) || c.file.startsWith(ROOT)), `expanded: ${c.name} -> ${c.file}`);
+    // expand() replaces only a leading "~" and "<repo>"; a "~" inside an 8.3 short name (the Windows
+    // runner's C:\Users\RUNNER~1\...) is part of the home path and stays.
+    for (const c of install.contracts(TMP_HOME)) assert.ok(path.isAbsolute(c.file) && !c.file.startsWith('~') && !c.file.includes('<repo>') && (c.file.startsWith(TMP_HOME) || c.file.startsWith(ROOT)), `expanded: ${c.name} -> ${c.file}`);
     assert.strictEqual(install.differs('DailyDistill', { execute: 'PWSH.EXE', args: dd.args + ' ', wd: '' }), false, 'the same action in another case and with trailing space does not differ');
     assert.strictEqual(install.differs('DailyDistill', { execute: 'pwsh.exe', args: '-File "C:/old/jobs/daily-distill.ps1"' }), true);
     assert.strictEqual(install.differs('NotOurs', { execute: 'x' }), null);
