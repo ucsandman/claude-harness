@@ -10,7 +10,7 @@
 // never appears in its own trace.
 export const EXPECTED_ORDER = ["harness-mods"];
 export const EXPECTED_SUPPORTS = ["toolInterception", "toolResultMutation", "runtimeEvents", "subagentEvents", "dynamicPermissions", "usageSignals", "contextSignals", "middleware", "runtimeMemory"];
-export const RUNTIME_PIN = { claudeVersion: "2.1.274", dtsSha256Prefix: "ab7a8a2d45f5d8d8" };
+export const RUNTIME_PIN = { claudeVersion: "2.1.319", dtsSha256Prefix: "ab7a8a2d45f5d8d8" };
 
 export function newStatus() {
   return {

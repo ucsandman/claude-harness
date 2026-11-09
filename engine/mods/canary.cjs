@@ -26,7 +26,7 @@ const HOME = process.env.USERPROFILE || os.homedir();
 const CLAUDE = path.join(HOME, '.claude');
 const MODS = path.join(CLAUDE, 'mods');
 const STATE = path.join(MODS, 'state');
-const PIN_VERSION = '2.1.274';
+const PIN_VERSION = '2.1.319';
 // Mirrors harness-mods/hooks/lib/canary.mjs EXPECTED_SUPPORTS; used only to report probe breadth (L2).
 const EXPECTED_SUPPORTS = ['toolInterception', 'toolResultMutation', 'runtimeEvents', 'subagentEvents',
   'dynamicPermissions', 'usageSignals', 'contextSignals', 'middleware', 'runtimeMemory'];
