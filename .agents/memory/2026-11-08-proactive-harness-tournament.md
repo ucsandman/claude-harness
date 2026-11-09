@@ -62,7 +62,7 @@ Four judges scored the candidates; the maximum total is 240. All four judges ran
 | `core/rules/global-rules.md` | edit | ADHD rule 3 plus a How to Work bullet (§2.8). |
 | `docs/opening-move.md`, `README.md` (hooks table, Context group; jobs table) | new/edit | Docs. |
 
-State lives in `C:\Users\sandm\.claude\state\opening-move\`:
+State lives in `~\.claude\state\opening-move\`:
 - `repos\<key>.json`. The key is the repo toplevel, lowercased, with `[^a-z0-9]` replaced by `_`. Shape: `{repo, ring:[{session,transcript_path,cwd,ts,source:'prompt'|'stop',touched:[paths],tainted:bool}] (max 5), next:{text,owner,waitUntil,ts,session}, lastTest:{cmd,isError,ts}, lastBrief:{ts,kind,hash}}`
 - `sessions\<sid>.json`: `{briefNext:{text,owner,kind,ts}, goUsed, blockedForPromptSeq}`. Rows older than 7 days are removed.
 - `ledger.jsonl`: `{ts,repo,kind,hash,outcome:'shown'|'taken'|'ignored'|'still-open'|'go'|'auto-fixed'|'auto-fix-failed'|'auto-demoted'}`, trimmed to 90 days.
@@ -73,7 +73,7 @@ State lives in `C:\Users\sandm\.claude\state\opening-move\`:
 
 ### 2.2 SessionStart: `opening-move.cjs`
 
-**Wiring.** Through `wireAgentHooks` in `first-run.cjs`, the same pattern as the delegate guard: `SessionStart` group `{ matcher: 'startup|clear|compact', hooks: [{ type:'command', command: node "C:/Users/sandm/.claude/hooks/opening-move.cjs", timeout: 5 }] }`, exactly once.
+**Wiring.** Through `wireAgentHooks` in `first-run.cjs`, the same pattern as the delegate guard: `SessionStart` group `{ matcher: 'startup|clear|compact', hooks: [{ type:'command', command: node "~/.claude/hooks/opening-move.cjs", timeout: 5 }] }`, exactly once.
 
 **Gates.** All are fs-only, and the hook exits 0 every time.
 - Runs only when `process.env.CLAUDE_CODE_ENTRYPOINT === 'cli'`. Under any other value (`sdk-cli` for headless runs, cron, workflow agents) stdout stays empty.
@@ -86,10 +86,10 @@ State lives in `C:\Users\sandm\.claude\state\opening-move\`:
 - B. `repos\<key>.json`: ring, `next`, `lastTest`, `touched`. A ring row from another session less than 10 minutes old gives a LIVE SIBLING line. When `next` is missing, read the 256 KB tail of `ring[0].transcript_path`, the same read `opus-handoff-inject.cjs` does.
 - C. `digest.json`. Older than 60 minutes: spawn `node jobs/opening-move-digest.cjs` detached (`stdio:'ignore'`, `windowsHide`, `unref`, env `OPENING_MOVE_FROM=session`) behind `digest.lock`. The brief says "digest: 74 min old (refresh started)".
 - D. Half-done markers:
-  - the newest `C:\Users\sandm\.context-handoff-bundles\index.json` entry with this `repo_root`, created after `ring[0].ts` and less than 7 days old
+  - the newest `~\.context-handoff-bundles\index.json` entry with this `repo_root`, created after `ring[0].ts` and less than 7 days old
   - unchecked `- [ ]` items in `<repo>\.agents\memory\{plans,tasks}\*.md` modified in the last 14 days
   - `post-edit-diagnostics.jsonl` rows with `ok:false` whose file mtime is unchanged
-  - files in `C:\Users\sandm\clawd\agent-comms\inbox\` whose name or first line names the repo
+  - files in `~\clawd\agent-comms\inbox\` whose name or first line names the repo
 
 **NEXT ladder.** `rank(state)` is a pure export used by the probe and the fixture. First match wins. Text comes from fixed templates filled with numbers, shas and repo-controlled names only.
 
@@ -127,12 +127,12 @@ LIVE SIBLING: a session prompted here 29 s ago. Arm scope-lock on your files bef
 FIXED FOR YOU: rules-drift (port: 1 would change, now 0; doctor rules-drift ok).
 LEFT OPEN: .agents/memory/context/ untracked, 51 d. Last session's Next (you): "Push 05c3810 after the tournament finishes."
 RED: Mods canary leg validate-claude-runtime false (0 errors listed, Claude 2.1.319; --repin is refused while any leg is red). NightlyMeditation: latest-line.txt 51 d old (limit 26 h), last result 1.
-NEXT (me) [harness-red, rung 8, 51 d]: find why claude plugin validate C:\Users\sandm\.claude\mods\claude-runtime --json returns success not true with 0 errors on 2.1.319, fix it, then node C:\Users\sandm\.claude\mods\canary.cjs until 8 of 8 legs ok. About 5 min.
+NEXT (me) [harness-red, rung 8, 51 d]: find why claude plugin validate ~\.claude\mods\claude-runtime --json returns success not true with 0 errors on 2.1.319, fix it, then node ~\.claude\mods\canary.cjs until 8 of 8 legs ok. About 5 min.
 USE: Wes's prompt wins. "go", "continue", "next", "resume" or a greeting means start NEXT now. Otherwise do his task, and if NEXT is still open make it your closing Next line. Do not re-measure what this brief measured. A you-owned or hard-stop item is prepared (action, environment, side effects, rollback), never executed.
 ```
 
 - **Clean repo:** additionalContext `clean: 0 dirty, 0 unpushed, CI green 41 min ago, 0 of 10 NEXT rules matched (fixture 5 of 5)`, with no systemMessage and no title. If the fixture is below 5 of 5: `clean (UNVERIFIED: fixture 4 of 5)`.
-- **Overflow:** `+N more on the dashboard Today tab`. The URL is appended only when `C:\Users\sandm\.claude\state\dashboard-url.txt` names a live pid.
+- **Overflow:** `+N more on the dashboard Today tab`. The URL is appended only when `~\.claude\state\dashboard-url.txt` names a live pid.
 - **Writes:** `sessions\<sid>.json.briefNext`, `lastBrief`, a ledger row `shown`, and the evidence hash into `seen.json`.
 - **Judging the previous NEXT:** if the previous `lastBrief` condition now reads green (the same detector), it is `taken`. If unchanged with no commits since, it is `ignored`. Otherwise `still-open`.
 - **Demotion:** a kind with 10 or more `shown` in 14 days and a take rate below 20% gets `mutes.kinds[kind]='demoted'`. Only the Restore button reverses it.
@@ -154,12 +154,12 @@ USE: Wes's prompt wins. "go", "continue", "next", "resume" or a greeting means s
 
 ### 2.4 Stop: `turn-close.cjs`, which replaces `forced-verify-stop-gate.cjs`
 
-**Wiring.** One `Stop` group `{hooks:[{type:'command', command: node "C:/Users/sandm/.claude/hooks/turn-close.cjs", timeout: 5}]}`. It is synchronous, because enforce mode returns a decision. `first-run.cjs` removes any group whose command matches `/forced-verify-stop-gate/`. Net Stop spawns: 0 added.
+**Wiring.** One `Stop` group `{hooks:[{type:'command', command: node "~/.claude/hooks/turn-close.cjs", timeout: 5}]}`. It is synchronous, because enforce mode returns a decision. `first-run.cjs` removes any group whose command matches `/forced-verify-stop-gate/`. Net Stop spawns: 0 added.
 
 1. Runs only when the entrypoint is `cli`. Otherwise it exits 0 silently.
 2. Text: `payload.last_assistant_message`. If that is absent, the last assistant text from a 256 KB transcript tail. Step 2 captures one real payload to confirm the field.
 3. Parse the last match of `/^\s*Next\s*(?:\((me|you|none|wait\s+(\d{4}-\d{2}-\d{2}))\))?\s*:\s*(.+)$/im`. Untagged means `you`. Write `next` to the repo with the most `FileModified` paths this turn (cwd repo on a tie). Every touched repo gets a ring row `{source:'stop', touched, tainted}`.
-4. Bus evidence from `C:\Users\sandm\.claude\mods\state\events\<session_id>.jsonl`:
+4. Bus evidence from `~\.claude\mods\state\events\<session_id>.jsonl`:
    - Read the 512 KB tail. If it holds no `PromptSubmitted`, read the whole file up to 8 MB. Above that, skip with "bus: too large".
    - Events used: `FileModified{path}`, `ToolRequested{tool,tool_use_id,args}` (args may be a JSON string or an object), `ToolCompleted{tool_use_id,isError}`, `SubagentStarted{background}`, `SubagentCompleted`.
    - `lastEdit`: the max `seq` of a `FileModified` with an extension in `.cjs .js .mjs .ts .tsx .py .ps1 .sh .go .rs`.
@@ -177,11 +177,11 @@ USE: Wes's prompt wins. "go", "continue", "next", "resume" or a greeting means s
 
 Each source is written as `{ok,count,ms,error}`:
 - **doctor:** `require('../engine/doctor/doctor.cjs').run()` in process.
-- **canary:** `guard-canary-status.json` plus `C:\Users\sandm\.claude\mods\state\canary-leg.json`, split per leg. A false security leg (`secret-guard-denies-canary`, `model-guard-denies-modelless`, `gate-freeze-denies-project-edit`, `frozen-guards-match-lock`, `slopsquat-denies-unknown-package`, `hooksPath-set`, `pre-commit-exists`, `hook-targets-exist`) is guard-class. A false Mods leg is named, with the note that starts with `<leg>:`.
+- **canary:** `guard-canary-status.json` plus `~\.claude\mods\state\canary-leg.json`, split per leg. A false security leg (`secret-guard-denies-canary`, `model-guard-denies-modelless`, `gate-freeze-denies-project-edit`, `frozen-guards-match-lock`, `slopsquat-denies-unknown-package`, `hooksPath-set`, `pre-commit-exists`, `hook-targets-exist`) is guard-class. A false Mods leg is named, with the note that starts with `<leg>:`.
 - **jobs:** one PowerShell `Get-ScheduledTaskInfo` call over `JOBS` plus `ARG_REWRITES` plus the `EXPECTS` names, plus an mtime check on each `expects.path`.
 - **ci:** only when `OPENING_MOVE_FROM=session`: `gh run list -R <owner/repo> -b <branch> -L 1 --json conclusion,status,headSha,workflowName,databaseId,createdAt`, for at most 15 repos with commits in the last 14 days. Otherwise it is skipped and the old rows are kept with their age.
 - **repos:** `require('../tools/gitradar/gitradar.cjs').scanAll()`.
-- **hook-errors:** rows with `errors` in `C:\Users\sandm\.claude\state\prompt-dispatch.jsonl` over the last 24 h.
+- **hook-errors:** rows with `errors` in `~\.claude\state\prompt-dispatch.jsonl` over the last 24 h.
 - **learning:** mtime of `storage/distill-PROPOSAL.md`.
 - **fixture:** see below.
 
@@ -230,7 +230,7 @@ The result is `digest.fixture={found,of:5,missed:[...]}`.
 
 | Item | Template |
 |---|---|
-| Mods leg false | `Mods canary leg <leg> false (<note>); --repin is refused while any leg is red. Diagnose <leg>, then node C:\Users\sandm\.claude\mods\canary.cjs until all legs ok.` |
+| Mods leg false | `Mods canary leg <leg> false (<note>); --repin is refused while any leg is red. Diagnose <leg>, then node ~\.claude\mods\canary.cjs until all legs ok.` |
 | Guard leg false | `GUARD <leg> is not denying: do not trust guarded operations; fix from an agnostic-ai session.` (every session) |
 | Stale job | `<job>: <file> <n> d old (limit <h> h), last result <code>.` |
 | Distill | `distill: proposal <n> d old; DailyDistill <registered\|missing>.` |
@@ -242,12 +242,12 @@ The result is `digest.fixture={found,of:5,missed:[...]}`.
 1. After line 15, add: `if ($prev -and -not $prev.ok -and $prev.banner -and ([datetime]::UtcNow - [datetime]$prev.ranAt).TotalMinutes -lt 60) { Write-Output $prev.banner; exit 0 }`
 2. Replace the notes regex filter with `$missing += @($mods.notes | Where-Object { $leg = ($_ -split ':',2)[0].Trim(); $mods.results.PSObject.Properties[$leg] -and -not $mods.results.$leg })`
 3. Build the banner lines into `$banner` and store `banner = $banner` in the status JSON.
-4. When `mods-layer-healthy` is the only false result, drop the "GUARD CANARY FAILED... safety guard is not enforcing" sentence. Print the MODS line only when the stdin payload `cwd` is under `C:\Projects\agnostic-ai` or `C:\Users\sandm\.claude`. Read stdin with `[Console]::In.ReadToEnd()`.
+4. When `mods-layer-healthy` is the only false result, drop the "GUARD CANARY FAILED... safety guard is not enforcing" sentence. Print the MODS line only when the stdin payload `cwd` is under `C:\Projects\agnostic-ai` or `~\.claude`. Read stdin with `[Console]::In.ReadToEnd()`.
 
 ### 2.7 Dashboard Today tab
 
 **Server** (`tools/dashboard/dashboard.cjs`):
-- `server.listen` callback (line 759) writes `C:\Users\sandm\.claude\state\dashboard-url.txt` as `{"url":"http://127.0.0.1:<PORT>","pid":<pid>}`.
+- `server.listen` callback (line 759) writes `~\.claude\state\dashboard-url.txt` as `{"url":"http://127.0.0.1:<PORT>","pid":<pid>}`.
 - Routes. Every POST already passes the `authorized()` gate at line 543.
   - `GET /api/opening-move` returns `{digest, briefs:{<key>:{ts,text,kind,reds}}, mutes, settings, stats:[{kind,shown7,taken7,ignored7,open7,shown14,taken14,rate14,state}], verify:{wouldBlock7,nudged7,precision7}, nextCoverage:{finals,withNext}}`
   - `POST /api/opening-move/mute` with `{scope:'item'|'repo'|'all'|'kind', key, days:7|null, restore:bool}`
@@ -276,9 +276,9 @@ New How to Work bullet, after "Determine current state…":
 
 The brief is shown to Wes in a real session before any machinery is built.
 
-1. Regenerate tonight's numbers by running `npm run doctor`, `node C:\Users\sandm\.claude\mods\canary.cjs --json`, and `Get-ScheduledTaskInfo` on NightlyMeditation. Do not copy §2.2.
-2. Write the three strings (systemMessage, sessionTitle, additionalContext) by hand to `C:\Users\sandm\.claude\state\opening-move\sample-agnostic-ai.txt`.
-3. Add a throwaway 10-line `C:\Users\sandm\AppData\Local\Temp\claude\37563dc63e19dd68\8328fccd-65b4-4f71-81f0-81bbe35dc073\scratchpad\om-sample.cjs`. It prints them as SessionStart JSON only when `cwd` is `C:\Projects\agnostic-ai`. Register it temporarily in `settings.json` SessionStart. This is a frozen key: relock now, and relock again after removal.
+1. Regenerate tonight's numbers by running `npm run doctor`, `node ~\.claude\mods\canary.cjs --json`, and `Get-ScheduledTaskInfo` on NightlyMeditation. Do not copy §2.2.
+2. Write the three strings (systemMessage, sessionTitle, additionalContext) by hand to `~\.claude\state\opening-move\sample-agnostic-ai.txt`.
+3. Add a throwaway 10-line `~\AppData\Local\Temp\claude\37563dc63e19dd68\8328fccd-65b4-4f71-81f0-81bbe35dc073\scratchpad\om-sample.cjs`. It prints them as SessionStart JSON only when `cwd` is `C:\Projects\agnostic-ai`. Register it temporarily in `settings.json` SessionStart. This is a frozen key: relock now, and relock again after removal.
 4. Wes opens one session in `C:\Projects\agnostic-ai`. Three questions are recorded:
    - Did the terminal line render?
    - Did the session title change?
@@ -379,6 +379,6 @@ At about 5 interactive sessions a week, that is about 5k token-equivalents a wee
 3. **Threadkeeper timebox** (187): add the 60/120-minute timebox Mod note once the Mods canary has been green for 7 days in a row.
 4. **Standing Orders family mining** (182): rebuild its request families when `history.jsonl` exceeds 300 human prompts in a month again. Feed the families into which NEXT kind leads.
 
-Files changed by this step: none. Sources re-read: prompt-dispatch.cjs, forced-verify-stop-gate.cjs, wakeup-guard.cjs, opus-handoff-inject.cjs, session-count.cjs, guard-canary.ps1, jobs/install.cjs, jobs/daily-distill.ps1, port-daily.ps1, errorlog/harvest.sh, meditation/run-nightly.sh, doctor.cjs, mods/canary.cjs with canary-leg.json and guard-canary-status.json, dashboard.cjs and dashboard.html, first-run.cjs, reg-hooks.cjs, gitradar.cjs, gate-manifest.json, the C:\Users\sandm\.claude\settings.json hooks, global-rules.md, and the Mods bus event kinds (415 files).
+Files changed by this step: none. Sources re-read: prompt-dispatch.cjs, forced-verify-stop-gate.cjs, wakeup-guard.cjs, opus-handoff-inject.cjs, session-count.cjs, guard-canary.ps1, jobs/install.cjs, jobs/daily-distill.ps1, port-daily.ps1, errorlog/harvest.sh, meditation/run-nightly.sh, doctor.cjs, mods/canary.cjs with canary-leg.json and guard-canary-status.json, dashboard.cjs and dashboard.html, first-run.cjs, reg-hooks.cjs, gitradar.cjs, gate-manifest.json, the ~\.claude\settings.json hooks, global-rules.md, and the Mods bus event kinds (415 files).
 
 Not verified: the Stop field `last_assistant_message` on 2.1.319 (step 2 captures one real payload), the placement and rendering of `sessionTitle` and `systemMessage` (step 0 checks them on a real session), and the exact commands of the seven-command CI set (read from `.github/workflows`).
