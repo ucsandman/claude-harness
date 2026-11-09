@@ -6,7 +6,8 @@
  *   node engine/hooks/tests/opening-move-probe.cjs --stub   # a stub whose main returns '': every case must FAIL (L1, positives)
  *   node engine/hooks/tests/opening-move-probe.cjs --leaky  # a stub with every gate off: every negative must FAIL (L1, negatives)
  *
- * Cases (a)-(h) of spec section 4 Step 1, plus (i)-(l) from the step 1 review, over throwaway
+ * Cases (a)-(h) of spec section 4 Step 1, plus (i)-(n) from the step 1 review, plus (o)-(r) for
+ * step 3's digest.json (ci-red, harness-red, the fixture wording, the refresh lock), over throwaway
  * git repos under os.tmpdir() with real commits. The hook runs as a subprocess with HOME and
  * USERPROFILE pointed at a temp home, so no real state is read or written. A negative (something
  * that must NOT happen: a leaked subject, a gate that prints, a prompt that binds) passes
@@ -50,7 +51,9 @@ function leakyImpl() {
   }
   let subjects = '';
   try { subjects = execFileSync('git', ['log', '--format=%s'], { cwd: evt.cwd, encoding: 'utf8', windowsHide: true }); } catch (_) {}
-  const ctx = ['[opening-move] leaky', 'LIVE SIBLING: a session prompted here 1 s ago.', 'clean (UNVERIFIED: fixture not built): 0 dirty', 'NEXT (me) [resume, rung 3]: old line', subjects].join('\n');
+  // digest leaks: a refresh on every start, ci-red on any branch, harness reds in any repo
+  try { if (process.env.OPENING_MOVE_DIGEST_JOB) execFileSync(process.execPath, [process.env.OPENING_MOVE_DIGEST_JOB], { env: { ...process.env, OPENING_MOVE_FROM: 'session' }, windowsHide: true }); } catch (_) {}
+  const ctx = ['[opening-move] leaky', 'LIVE SIBLING: a session prompted here 1 s ago.', 'clean (UNVERIFIED: fixture not built): 0 dirty', 'NEXT (me) [resume, rung 3]: old line', 'NEXT (me) [ci-red, rung 1]: CI failed on main at abc1234.', 'NEXT (me) [harness-red, rung 8]: NightlyMeditation: latest-line.txt 51 d old (limit 26 h), last result 1.', subjects].join('\n');
   process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: ctx } }));
 }
 const LEAKY_FILE = path.join(TMP, 'opening-move-leaky.cjs');
@@ -58,6 +61,11 @@ fs.writeFileSync(LEAKY_FILE, `'use strict';\n(${leakyImpl.toString()})();\n`);
 
 const HOOK = LEAKY ? LEAKY_FILE : STUB ? STUB_FILE : path.resolve(__dirname, '..', 'opening-move.cjs');
 const mod = require(HOOK);
+// The brief starts a detached digest refresh when digest.json is absent or old; in the probe that job is
+// this no-op (or, in case r, a counter), never the real digest.
+const NOOP_JOB = path.join(TMP, 'digest-noop.cjs');
+fs.writeFileSync(NOOP_JOB, "'use strict';\n");
+const REAL_DIGEST = path.resolve(__dirname, '..', '..', '..', 'jobs', 'opening-move-digest.cjs');
 
 const H = 3600e3;
 const iso = (offsetMs) => new Date(Date.now() + offsetMs).toISOString();
@@ -120,7 +128,7 @@ const ssMs = [];
 function run(payload, extraEnv = {}) {
   runs++;
   const t0 = Date.now();
-  const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify(payload), env: cleanEnv({ CLAUDE_CODE_ENTRYPOINT: 'cli', ...extraEnv }), encoding: 'utf8', timeout: 20000, windowsHide: true });
+  const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify(payload), env: cleanEnv({ CLAUDE_CODE_ENTRYPOINT: 'cli', OPENING_MOVE_DIGEST_JOB: NOOP_JOB, ...extraEnv }), encoding: 'utf8', timeout: 20000, windowsHide: true });
   const ms = Date.now() - t0;
   if (payload.hook_event_name === 'SessionStart') ssMs.push(ms);
   const out = r.stdout || '';
@@ -159,8 +167,8 @@ try {
     const lines = r.ctx.split('\n');
     assert.strictEqual(lines.length, 2, r.ctx);
     assert.ok(/git 3 of 3/.test(lines[0]) && /ring rows 0 of 5/.test(lines[0]) && /rules \d+ of 10 checked/.test(lines[0]), lines[0]);
-    assert.ok(/digest: not built \(step 3\)/.test(lines[0]) && /fixture: not built \(UNVERIFIED\)/.test(lines[0]), lines[0]);
-    assert.ok(/^clean \(UNVERIFIED: fixture not built\): 0 dirty, 0 unpushed, 0 of \d+ NEXT rules matched, \d+ skipped/.test(lines[1]), lines[1]);
+    assert.ok(/; digest: none yet \(refresh (started|running)\)\.$/.test(lines[0]), lines[0]);
+    assert.ok(/^clean \(UNVERIFIED: no fixture result\): 0 dirty, 0 unpushed, 0 of \d+ NEXT rules matched, \d+ skipped/.test(lines[1]), lines[1]);
     assert.strictEqual(r.sys, undefined, 'clean must carry no systemMessage');
     assert.ok(/1 dirty/.test(r2.ctx), r2.ctx);
   });
@@ -336,7 +344,7 @@ try {
     const dir = mkRepo('fx-fresh', { remote: false, dated: false });
     const r = run(ss(dir, 'sl1'));
     assert.ok(/git 2 of 3 \(rev-list: no upstream\)/.test(r.ctx), r.ctx);
-    assert.ok(/^clean \(UNVERIFIED: fixture not built\): 0 dirty, unpushed: unknown \(no upstream\), 0 of \d+ NEXT rules matched/m.test(r.ctx), r.ctx);
+    assert.ok(/^clean \(UNVERIFIED: no fixture result\): 0 dirty, unpushed: unknown \(no upstream\), 0 of \d+ NEXT rules matched/m.test(r.ctx), r.ctx);
     assert.strictEqual(r.sys, undefined, 'clean must carry no systemMessage');
   });
 
@@ -384,6 +392,145 @@ try {
     const ms = Number(process.hrtime.bigint() - t0) / 1e6;
     assert.ok(ms < 50, `parseNext took ${ms.toFixed(1)} ms`);
     assert.ok(p && p.owner === 'me' && p.text.startsWith('a'), JSON.stringify(p));
+  });
+
+  // --- step 3: digest.json consumption (jobs/opening-move-digest.cjs writes it) ---
+  const DIGEST_FILE = path.join(STATE, 'digest.json');
+  const LOCK_FILE = path.join(STATE, 'digest.lock');
+  const SRC8 = ['doctor', 'canary', 'jobs', 'ci', 'repos', 'hookErrors', 'learning', 'fixture'];
+  const readJsonFile = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) { return null; } };
+  const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  function plantDigest(d) {
+    fs.mkdirSync(STATE, { recursive: true });
+    fs.writeFileSync(DIGEST_FILE, JSON.stringify({ ts: iso(-60e3), from: 'schedule', ms: 1, sources: Object.fromEntries(SRC8.map((n) => [n, { ok: true, count: 1, ms: 1 }])), red: [], fixed: [], ci: [], repos: [], fixture: { found: 5, of: 5, missed: [] }, ...d }));
+  }
+  const clearDigest = () => { for (const f of [DIGEST_FILE, LOCK_FILE]) { try { fs.unlinkSync(f); } catch (_) {} } };
+
+  kase('o', 'a digest ci row for this repo and branch with conclusion failure is NEXT (me) [ci-red, rung 1]; one on another branch or repo is not, and a green row reads "CI green" on the clean line', () => {
+    const dir = mkRepo('fx-ci');
+    const sha = gitx(dir, ['rev-parse', 'HEAD']);
+    const fetchedAt = iso(-60e3);
+    plantDigest({ ci: [{ repo: 'o/fx-ci', key: keyOf(dir), branch: 'main', sha, conclusion: 'failure', status: 'completed', workflow: 'CI', runId: 42, createdAt: iso(-2 * H), fetchedAt }] });
+    const r = run(ss(dir, 'so1'));
+    plantDigest({ ci: [
+      { repo: 'o/fx-ci', key: keyOf(dir), branch: 'other', sha, conclusion: 'failure', workflow: 'CI', runId: 43, createdAt: iso(-H), fetchedAt },
+      { repo: 'o/x', key: 'some-other-repo', branch: 'main', sha, conclusion: 'failure', workflow: 'CI', runId: 44, createdAt: iso(-H), fetchedAt },
+      { repo: 'o/fx-ci', key: keyOf(dir), branch: 'main', sha, conclusion: 'success', workflow: 'CI', runId: 45, createdAt: iso(-30 * 60e3), fetchedAt },
+    ] });
+    const g = run(ss(dir, 'so2'));
+    // A failure fetched 13 h ago may be green by now (a scheduled run never fetches CI): rung 1 skips, it is not a NEXT.
+    plantDigest({ ci: [{ repo: 'o/fx-ci', key: keyOf(dir), branch: 'main', sha, conclusion: 'failure', status: 'completed', workflow: 'CI', runId: 46, createdAt: iso(-14 * H), fetchedAt: iso(-13 * H) }] });
+    const st = run(ss(dir, 'so3'));
+    clearDigest();
+    neg('o', 'a failure on another branch or in another repo gives no ci-red', () => !/ci-red/.test(g.ctx));
+    neg('o', 'a failure row fetched 13 h ago gives no ci-red NEXT', () => !/NEXT \(me\) \[ci-red/.test(st.ctx));
+    assert.ok(/^clean \(fixture 5 of 5\): 0 dirty, 0 unpushed, 0 of \d+ NEXT rules matched, \d+ skipped \(source absent: [^)]*ci-red/m.test(st.ctx), 'a stale ci row skips rung 1: ' + st.ctx);
+    assert.ok(r.ctx.includes(`NEXT (me) [ci-red, rung 1, 2 h]: CI failed on main at ${sha.slice(0, 7)} (CI, run 42, 2 h ago): read the failing log and fix it. About 10 min.`), r.ctx);
+    assert.ok(/^RED: CI red on main\.$/m.test(r.ctx), r.ctx);
+    assert.ok(/^clean \(fixture 5 of 5\): 0 dirty, 0 unpushed, CI green 30 min ago, 0 of \d+ NEXT rules matched/m.test(g.ctx), g.ctx);
+  });
+
+  kase('p', 'digest red items: agnostic-ai gets NEXT (me) [harness-red, rung 8]; another repo gets none, but a guard-class item shows on its RED line and is never its NEXT', () => {
+    const ha = mkRepo('agnostic-ai');
+    const other = mkRepo('fx-not-harness');
+    const job = { kind: 'job-stale', text: 'NightlyMeditation: latest-line.txt 51 d old (limit 26 h), last result 1.', hash: 'aaaaaaaaaaaa', ageMs: 51 * 24 * H, guardClass: false, source: 'jobs' };
+    const guard = { kind: 'guard-leg', text: 'GUARD hooksPath-set is not denying: do not trust guarded operations; fix from an agnostic-ai session.', hash: 'bbbbbbbbbbbb', ageMs: H, guardClass: true, source: 'canary' };
+    plantDigest({ red: [job] });
+    const h = run(ss(ha, 'sp1'));
+    const o = run(ss(other, 'sp2'));
+    plantDigest({ red: [guard, job] });
+    const og = run(ss(other, 'sp3'));
+    const hg = run(ss(ha, 'sp4'));
+    clearDigest();
+    neg('p', 'a non-harness repo shows no harness-red NEXT and no job red', () => !/harness-red/.test(o.ctx) && !/NightlyMeditation/.test(o.ctx));
+    neg('p', 'a guard-class red outside a harness repo is never its NEXT', () => !/^NEXT \(me\) \[harness-red/m.test(og.ctx) && !/NightlyMeditation/.test(og.ctx));
+    assert.ok(h.ctx.includes('NEXT (me) [harness-red, rung 8, 51 d]: NightlyMeditation: latest-line.txt 51 d old (limit 26 h), last result 1. About 5 min.'), h.ctx);
+    assert.ok(/^Opening move, agnostic-ai: 1 red\. Type go to start: NightlyMeditation/.test(h.sys || ''), 'systemMessage: ' + h.sys);
+    assert.ok(/^RED: GUARD hooksPath-set is not denying/m.test(og.ctx), 'a guard-class red shows in every session: ' + og.ctx);
+    assert.ok(/^NEXT \(me\) \[harness-red, rung 8, 1 h\]: GUARD hooksPath-set/m.test(hg.ctx) && /: 2 red/.test(hg.sys || ''), 'in the harness repo the guard item leads and both are red: ' + hg.ctx + ' / ' + hg.sys);
+  });
+
+  kase('q', 'L1 through the real digest job: fixture 5 of 5 gives "clean (fixture 5 of 5)"; with fault 1 deleted the digest says 4 of 5, missed [stale-dirty], and the brief "clean (UNVERIFIED: fixture 4 of 5)"', () => {
+    const dir = mkRepo('fx-fixture');
+    const dig = (extra) => spawnSync(process.execPath, [REAL_DIGEST], { env: cleanEnv({ LOCALAPPDATA: path.join(TMP, 'local'), OPENING_MOVE_ONLY: 'fixture', OPENING_MOVE_REPAIR: 'off', ...extra }), encoding: 'utf8', timeout: 60000, windowsHide: true });
+    clearDigest();
+    dig({});
+    const j5 = readJsonFile(DIGEST_FILE);
+    const r5 = run(ss(dir, 'sq1'));
+    dig({ OPENING_MOVE_FIXTURE_DROP: 'stale-dirty' });
+    const j4 = readJsonFile(DIGEST_FILE);
+    const r4 = run(ss(dir, 'sq2'));
+    clearDigest();
+    assert.ok(j5 && j4, 'the digest job wrote no digest.json');
+    assert.deepStrictEqual([j5.fixture, j4.fixture], [{ found: 5, of: 5, missed: [] }, { found: 4, of: 5, missed: ['stale-dirty'] }]);
+    assert.ok(/; digest \d+ (s|min) old \(1 of 8 sources, fixture 5 of 5\)\.$/.test(r5.ctx.split('\n')[0]), r5.ctx.split('\n')[0]);
+    assert.ok(/^clean \(fixture 5 of 5\): 0 dirty/m.test(r5.ctx), r5.ctx);
+    assert.ok(/^clean \(UNVERIFIED: fixture 4 of 5\): 0 dirty/m.test(r4.ctx), r4.ctx);
+  });
+
+  kase('r', 'a digest older than 60 min starts one detached refresh (OPENING_MOVE_FROM=session, OPENING_MOVE_SPAWNER=this repo) behind digest.lock; a second start says "refresh running"; a dead holder, a live holder past 30 min and an empty lock past 10 min are taken over; a live holder at 11 min and a fresh empty lock are not; a fresh digest starts none', () => {
+    const dir = mkRepo('fx-refresh');
+    const count = path.join(TMP, 'refresh-count.log');
+    const job = path.join(TMP, 'digest-counter.cjs');
+    // The counter stays alive 1.5 s, like a real run (34 s), so its pid holds the lock while it runs.
+    fs.writeFileSync(job, `'use strict';\nrequire('fs').appendFileSync(${JSON.stringify(count)}, (process.env.OPENING_MOVE_FROM || 'unset') + '/' + (process.env.OPENING_MOVE_SPAWNER === undefined ? 'unset' : process.env.OPENING_MOVE_SPAWNER) + ' ');\nAtomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1500);\n`);
+    const calls = () => { try { return fs.readFileSync(count, 'utf8').trim().split(' ').filter(Boolean); } catch (_) { return []; } };
+    const waitFor = (n) => { const end = Date.now() + 8000; while (calls().length < n && Date.now() < end) sleep(100); return calls(); };
+    const head = (x) => x.ctx.split('\n')[0];
+    const env = { OPENING_MOVE_DIGEST_JOB: job };
+    clearDigest();
+    plantDigest({ ts: iso(-74 * 60e3) });
+    const a = run(ss(dir, 'sr1'), env);
+    const b = run(ss(dir, 'sr2'), env);
+    const afterTwo = waitFor(1);
+    sleep(300);
+    const settled = calls();
+    fs.writeFileSync(LOCK_FILE, JSON.stringify({ pid: 1, ts: iso(-11 * 60e3) }));
+    const c = run(ss(dir, 'sr3'), env);
+    const afterThree = waitFor(2);
+    fs.writeFileSync(LOCK_FILE, JSON.stringify({ pid: process.pid, ts: iso(-11 * 60e3) }));
+    const d = run(ss(dir, 'sr5'), env);
+    fs.writeFileSync(LOCK_FILE, JSON.stringify({ pid: process.pid, ts: iso(-31 * 60e3) }));
+    const e = run(ss(dir, 'sr6'), env);
+    waitFor(3);
+    fs.writeFileSync(LOCK_FILE, '');
+    const t4h = (Date.now() - 4 * H) / 1000;
+    fs.utimesSync(LOCK_FILE, t4h, t4h);
+    const f = run(ss(dir, 'sr7'), env);
+    waitFor(4);
+    fs.writeFileSync(LOCK_FILE, '');
+    const g = run(ss(dir, 'sr8'), env);
+    try { fs.unlinkSync(LOCK_FILE); } catch (_) {}
+    sleep(300);
+    const beforeFresh = calls().length;
+    plantDigest({ ts: iso(-5 * 60e3) });
+    const fresh = run(ss(dir, 'sr4'), env);
+    sleep(1200);
+    const afterFresh = calls();
+    clearDigest();
+    neg('r', 'a 5-minute-old digest starts no refresh and says none', () => afterFresh.length === beforeFresh && !/refresh (started|running)/.test(head(fresh)));
+    neg('r', 'a live holder at 11 min and an empty lock just written start no refresh', () => /refresh running/.test(head(d)) && /refresh running/.test(head(g)) && afterFresh.length === 4);
+    assert.ok(/; digest: 74 min old \(refresh started; 8 of 8 sources, fixture 5 of 5\)\.$/.test(head(a)), head(a));
+    assert.ok(/digest: 74 min old \(refresh running; /.test(head(b)), head(b));
+    assert.deepStrictEqual([afterTwo, settled], [[`session/${keyOf(dir)}`], [`session/${keyOf(dir)}`]], 'two starts inside the lock: exactly one refresh, as OPENING_MOVE_FROM=session naming its spawner');
+    assert.ok(/refresh started/.test(head(c)) && afterThree.length === 2, 'a lock whose pid is dead is taken over: ' + head(c) + ' / ' + afterThree.join(','));
+    assert.ok(/refresh started/.test(head(e)), 'a live holder past 30 min is taken over: ' + head(e));
+    assert.ok(/refresh started/.test(head(f)), 'an empty lock 4 h old is taken over: ' + head(f));
+    assert.strictEqual(afterFresh.length, 4, 'exactly 4 refreshes in 8 starts: ' + afterFresh.join(','));
+    return `${afterFresh.length} refreshes in 8 starts`;
+  });
+
+  kase('s', 'head and clean lines follow the digest sources: a skipped ci reads "7 of 8 sources, ci skipped"; a fixture source that failed reads UNVERIFIED even beside a stored 5 of 5', () => {
+    const dir = mkRepo('fx-sources');
+    const srcs = Object.fromEntries(SRC8.map((n) => [n, { ok: true, count: 1, ms: 1 }]));
+    plantDigest({ sources: { ...srcs, ci: { ok: false, count: 0, ms: 0, skipped: 'scheduled, no session env' } } });
+    const a = run(ss(dir, 'ss1'));
+    plantDigest({ sources: { ...srcs, fixture: { ok: false, count: 0, ms: 3, error: 'ENOTDIR: not a directory' } }, fixture: { found: 5, of: 5, missed: [] } });
+    const b = run(ss(dir, 'ss2'));
+    clearDigest();
+    assert.ok(/; digest \d+ (s|min) old \(7 of 8 sources, ci skipped, fixture 5 of 5\)\.$/.test(a.ctx.split('\n')[0]), a.ctx.split('\n')[0]);
+    assert.ok(/^clean \(UNVERIFIED: no fixture result\): 0 dirty/m.test(b.ctx) && !/clean \(fixture/.test(b.ctx), b.ctx);
+    assert.ok(/\(7 of 8 sources, no fixture result\)\.$/.test(b.ctx.split('\n')[0]), b.ctx.split('\n')[0]);
   });
 } finally {
   try { fs.rmSync(TMP, { recursive: true, force: true }); } catch (_) {}

@@ -19,7 +19,7 @@
  *   unexpected-links links at the top of the Claude home that are not ours
  *   context-graph    the module graph lints clean (no cycles, no broken required edges)
  *   deps             node >= 18, git, and the interpreters settings.json hooks need
- *   jobs             (win32) scheduled tasks pointing at retired paths
+ *   jobs             (win32) scheduled tasks pointing at retired paths; a job contract artifact stale or absent FAILS
  *   mirror-current   the starred public mirror (claude-harness/main) is at origin/master
  */
 'use strict';
@@ -224,14 +224,37 @@ check('deps', 'node >= 18, git, and the interpreters hooks need', () => {
   return { ok, count: need.size + 2, lines };
 });
 
-check('jobs', 'scheduled tasks do not point at retired paths (win32)', () => {
-  if (process.platform !== 'win32') return { ok: true, count: 0, lines: ['not windows, 0 tasks checked'] };
-  const r = spawnSync('powershell', ['-NoProfile', '-Command', "Get-ScheduledTask | Where-Object { $_.TaskPath -eq '\\' } | ForEach-Object { $a = $_.Actions[0]; ($_.TaskName + \"`t\" + $a.Execute + ' ' + $a.Arguments) }"], { encoding: 'utf8' });
-  const rows = r.stdout.split('\n').map((l) => l.trim()).filter(Boolean);
+/**
+ * jobs: retired or missing action targets (warn), and every dead-man contract in jobs/install.cjs
+ * (expects / EXPECTS): an artifact older than its limit, or absent, FAILS, because a job that exits 0
+ * and writes nothing read as clean here for 51 days (NightlyMeditation, 2026-11-08). opts.rows (task
+ * lines), opts.list (contracts) and opts.now / opts.home are test seams; the default reads Task Scheduler.
+ */
+function jobsCheck(opts = {}) {
+  const now = opts.now || Date.now();
+  const lines = [];
+  let rows = opts.rows;
+  if (!rows && process.platform === 'win32') {
+    const r = spawnSync('powershell', ['-NoProfile', '-Command', "Get-ScheduledTask | Where-Object { $_.TaskPath -eq '\\' } | ForEach-Object { $a = $_.Actions[0]; ($_.TaskName + \"`t\" + $a.Execute + ' ' + $a.Arguments) }"], { encoding: 'utf8' });
+    rows = String(r.stdout || '').split('\n').map((l) => l.trim()).filter(Boolean);
+  }
+  rows = rows || [];
   const bad = rows.filter((l) => RETIRED.some((x) => l.includes(x)) || /scripts[\\/]mirror|claude-harness/.test(l));
   const dead = rows.filter((l) => { const m = /"([^"]+\.(?:cjs|ps1|sh|vbs|py))"/.exec(l) || /(\S+\.(?:cjs|ps1|sh|vbs|py))/.exec(l); return m && /[\\/]/.test(m[1]) && !fs.existsSync(m[1]); });
-  const lines = [...bad.map((l) => `RETIRED ${l.slice(0, 110)}`), ...dead.map((l) => `MISSING ${l.slice(0, 110)}`)];
-  return { ok: true, warn: lines.length > 0, count: rows.length, lines: lines.length ? lines : [`${rows.length} root tasks, none retired or missing`] };
+  lines.push(...bad.map((l) => `RETIRED ${l.slice(0, 110)}`), ...dead.map((l) => `MISSING ${l.slice(0, 110)}`));
+  const install = require('../../jobs/install.cjs');
+  const cs = install.contractStatus({ now, home: opts.home, list: opts.list });
+  const stale = cs.filter((c) => c.state !== 'fresh');
+  for (const c of stale) {
+    lines.push(c.state === 'missing' ? `MISSING-ARTIFACT ${c.name}: ${c.path}` : `STALE ${c.name}: ${c.path} ${Math.floor(c.ageMs / 86400e3)} d old (limit ${c.maxAgeH} h)`);
+  }
+  const known = install.knownJobs().length;
+  lines.push(`${cs.length} jobs with contracts, ${cs.length - stale.length} fresh (${known} known, ${known - cs.length} no contract); ${rows.length} root tasks, ${bad.length + dead.length} retired or missing`);
+  return { ok: stale.length === 0, warn: bad.length + dead.length > 0, count: rows.length + cs.length, lines };
+}
+check('jobs', 'scheduled tasks do not point at retired paths, and every job contract artifact is fresh (win32)', () => {
+  if (process.platform !== 'win32') return { ok: true, count: 0, lines: ['not windows, 0 tasks checked'] };
+  return jobsCheck();
 });
 
 check('mirror-current', 'the starred public mirror (claude-harness/main) is at origin/master', () => {
@@ -271,4 +294,4 @@ if (require.main === module) {
   process.exit(fails ? 1 : 0);
 }
 
-module.exports = { run };
+module.exports = { run, jobsCheck };

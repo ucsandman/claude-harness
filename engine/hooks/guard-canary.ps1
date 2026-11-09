@@ -1,4 +1,4 @@
-# guard-canary.ps1 - SessionStart, throttled ~20h.
+# guard-canary.ps1 - SessionStart, throttled ~20h while green; while red, the stored banner replays for 60 min.
 # L1 applied to the harness: actively make each guard fail on purpose and confirm it
 # blocks. A guard whose failure mode is silence reads as "clean" (corpus F4: ~32
 # silently skipped security reviews, a hook auditing in observe mode, a fully broken
@@ -14,7 +14,37 @@ if (Test-Path $statusPath) {
 }
 if ($prev -and $prev.ok -and ([datetime]::UtcNow - [datetime]$prev.ranAt).TotalHours -lt 20) { exit 0 }
 
+# The MODS line is for harness sessions only: the stdin payload's cwd under this repository or ~/.claude.
+$cwd = ''
+if ([Console]::IsInputRedirected) { try { $cwd = [string](([Console]::In.ReadToEnd() | ConvertFrom-Json).cwd) } catch { $cwd = '' } }
+$hooksDir = Split-Path -Parent $PSCommandPath
+$hooksItem = Get-Item $hooksDir -ErrorAction SilentlyContinue
+if ($hooksItem -and $hooksItem.LinkType -and $hooksItem.Target) { $hooksDir = [string](@($hooksItem.Target)[0]) }
+$repoRoot = Split-Path -Parent (Split-Path -Parent $hooksDir)
+function Test-Under([string]$child, [string]$parent) {
+  if (-not $child -or -not $parent) { return $false }
+  $c = ($child -replace '/', '\').TrimEnd('\').ToLower(); $p = ($parent -replace '/', '\').TrimEnd('\').ToLower()
+  return ($c -eq $p) -or $c.StartsWith($p + '\')
+}
+$harnessCwd = (Test-Under $cwd $repoRoot) -or (Test-Under $cwd $claudeDir)
+function Write-Banner([string]$text) {
+  foreach ($line in ($text -split "`n")) { if ($line -and ($harnessCwd -or $line -notmatch '^MODS LAYER')) { Write-Output $line } }
+}
+
+# Red throttle: a red status under 60 min old replays its stored banner instead of re-running every probe
+# (a red Mods leg cost two `claude plugin validate` calls with 90 s timeouts at every session start),
+# unless an input changed after that run (a relock, a settings.json fix, a Mods canary re-run): then re-probe.
+if ($prev -and -not $prev.ok -and $prev.banner) {
+  try { $ranAtUtc = ([datetime]$prev.ranAt).ToUniversalTime() } catch { $ranAtUtc = $null }
+  if ($ranAtUtc) {
+    $inputs = @((Join-Path $repoRoot 'tools\gates\gate-manifest.lock.json'), (Join-Path $claudeDir 'settings.json'), (Join-Path $claudeDir 'mods\state\canary-leg.json'))
+    $newer = @($inputs | Where-Object { (Test-Path $_) -and (Get-Item $_).LastWriteTimeUtc -gt $ranAtUtc })
+    if (([datetime]::UtcNow - $ranAtUtc).TotalMinutes -lt 60 -and $newer.Count -eq 0) { Write-Banner ([string]$prev.banner); exit 0 }
+  }
+}
+
 $results = [ordered]@{}
+$missing = @()
 
 # 1. secret-guard must DENY a canary Stripe live key (pattern-based, entropy-independent)
 $canaryKey = 'sk_live_' + ('a' * 24)
@@ -46,7 +76,8 @@ $results['hooksPath-set'] = [bool]($hp -match '\.claude[/\\]git-hooks')
 $results['pre-commit-exists'] = Test-Path (Join-Path $claudeDir 'git-hooks\pre-commit')
 
 # 4. every hook command registered in settings.json points at a file that exists
-$missing = @()
+# (counted on its own list: the frozen-drift lines already in $missing are not missing hook targets)
+$hookMissing = @()
 try {
   $settings = Get-Content (Join-Path $claudeDir 'settings.json') -Raw | ConvertFrom-Json
   foreach ($ev in $settings.hooks.PSObject.Properties) {
@@ -54,16 +85,17 @@ try {
       foreach ($h in $entry.hooks) {
         if ($h.command -match '"([^"]+\.(cjs|py|ps1))"') {
           $target = $Matches[1]
-          if (-not (Test-Path $target)) { $missing += $target }
+          if (-not (Test-Path $target)) { $hookMissing += $target }
         }
       }
     }
   }
-  $results['hook-targets-exist'] = ($missing.Count -eq 0)
+  $results['hook-targets-exist'] = ($hookMissing.Count -eq 0)
 } catch {
   $results['hook-targets-exist'] = $false
-  $missing += "settings.json unreadable: $($_.Exception.Message)"
+  $hookMissing += "settings.json unreadable: $($_.Exception.Message)"
 }
+$missing += $hookMissing
 
 # 5. Mods layer (Function Hooks, ~/.claude/mods): installed + validated + last session healthy + pure tests green.
 # A silent Mod failure must not read as clean; mods/canary.cjs states what it scanned (L2).
@@ -71,24 +103,31 @@ $modsOut = & node (Join-Path $claudeDir 'mods\canary.cjs') --json 2>&1 | Out-Str
 try {
   $mods = ($modsOut -split "`n" | Where-Object { $_ -match '^\s*\{' } | Select-Object -Last 1) | ConvertFrom-Json
   $results['mods-layer-healthy'] = [bool]$mods.ok
-  if (-not $mods.ok) { $missing += @($mods.notes | Where-Object { $_ -match 'FAIL|no |NOT ARMED|unreadable|vs pinned' }) }
+  # The notes of the legs that are false, keyed on results.<leg> (a note's wording never decides it).
+  if (-not $mods.ok) { $missing += @($mods.notes | Where-Object { $leg = ($_ -split ':',2)[0].Trim(); $mods.results.PSObject.Properties[$leg] -and -not $mods.results.$leg }) }
 } catch {
   $results['mods-layer-healthy'] = $false
   $missing += "mods canary did not run: $($modsOut.Trim())"
 }
 
 $ok = -not ($results.Values -contains $false)
+$banner = @()
+if (-not $ok) {
+  $falseKeys = @($results.GetEnumerator() | Where-Object { -not $_.Value } | ForEach-Object { $_.Key })
+  $failed = $falseKeys -join ', '
+  # Mods alone red: nothing is unguarded (mod-mode guards fall back to their classic hooks), so no GUARD sentence.
+  if (-not ($falseKeys.Count -eq 1 -and $falseKeys[0] -eq 'mods-layer-healthy')) { $banner += "GUARD CANARY FAILED: [$failed]. A safety guard is not enforcing right now. Fix this before trusting any guarded operation this session. Details: $statusPath" }
+  if (-not $results['mods-layer-healthy']) { $banner += "MODS LAYER (Function Hooks) is not healthy: any guard in mod mode falls back to its classic hook automatically (hooks/lib/mods-mode.cjs), so nothing is unguarded, but the Mod features are off. Run: node ~/.claude/mods/canary.cjs" }
+  if (-not $results['frozen-guards-match-lock']) { $banner += "A frozen guard file changed since the last lock (edited by hand, by Codex, or with the guard off). Review it, then from a harness session: node ~/.claude/tools/gates/gates.cjs --lock. Drift: $($missing -join '; ')" }
+}
+$bannerText = $banner -join "`n"
 [ordered]@{
   ranAt = [datetime]::UtcNow.ToString('o')
   ok = $ok
   results = $results
   missing = $missing
+  banner = $bannerText
 } | ConvertTo-Json -Depth 5 | Set-Content -Path $statusPath -Encoding utf8
 
-if (-not $ok) {
-  $failed = ($results.GetEnumerator() | Where-Object { -not $_.Value } | ForEach-Object { $_.Key }) -join ', '
-  Write-Output "GUARD CANARY FAILED: [$failed]. A safety guard is not enforcing right now. Fix this before trusting any guarded operation this session. Details: $statusPath"
-  if (-not $results['mods-layer-healthy']) { Write-Output "MODS LAYER (Function Hooks) is not healthy: any guard in mod mode falls back to its classic hook automatically (hooks/lib/mods-mode.cjs), so nothing is unguarded, but the Mod features are off. Run: node ~/.claude/mods/canary.cjs" }
-  if (-not $results['frozen-guards-match-lock']) { Write-Output "A frozen guard file changed since the last lock (edited by hand, by Codex, or with the guard off). Review it, then from a harness session: node ~/.claude/tools/gates/gates.cjs --lock. Drift: $($missing -join '; ')" }
-}
+if (-not $ok) { Write-Banner $bannerText }
 exit 0

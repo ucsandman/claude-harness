@@ -86,7 +86,7 @@ hook, skill or MCP server with a reason.
 | `agents/` | Subagent definitions with model, tools and scope | 6 |
 | `workflows/` | Saved Workflow scripts for multi-agent work | 4 |
 | `tools/` | Operator CLIs and pages: measure, search, prove, render | 25 |
-| `jobs/` | Scheduled jobs and the installer that points Task Scheduler at them | 6 |
+| `jobs/` | Scheduled jobs and the installer that points Task Scheduler at them | 7 |
 | `skills/` | The consolidated skill library, linked (never copied) into each client | 216 |
 | `packages/` | `markdown-agent-memory`, the published memory policy, templates and linter | 1 |
 | `docs/` | The documentation, each file under a word ceiling the pre-commit hook enforces | 29 |

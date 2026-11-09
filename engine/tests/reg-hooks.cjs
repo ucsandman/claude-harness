@@ -620,6 +620,55 @@ async function run() {
     assert.deepStrictEqual(timeoutOf('Stop', /other-stop/), [3], 'another Stop hook keeps its timeout');
   });
 
+  // --- 8c. job contracts (jobs/install.cjs expects + EXPECTS) and the doctor jobs check ---
+
+  await test('Jobs: every contract is the spec 2.5 table (path, maxAgeH); reapers and WesErrorLog carry none; the two new jobs are registered as written', () => {
+    const install = require('../../jobs/install.cjs');
+    const want = {
+      HarnessParitySync: ['~/.claude/logs/port-daily.log', 26], ClaudeErrorLog: ['~/.claude/logs/errorlog/harvest.log', 26],
+      CronwatchDaily: ['<repo>/tools/cronwatch/cronwatch.html', 26], DailyDistill: ['<repo>/storage/daily-distill.log', 26],
+      OpeningMoveDigest: ['~/.claude/state/opening-move/digest.json', 26],
+      NightlyMeditation: ['~/.claude/meditations/digests/latest-line.txt', 26], 'Harness Health Monthly': ['~/.claude/harness-health-last.txt', 768],
+    };
+    const got = Object.fromEntries(install.contracts(TMP_HOME).map(c => [c.name, [c.path, c.maxAgeH]]));
+    assert.deepStrictEqual(got, want);
+    assert.deepStrictEqual(Object.keys(install.EXPECTS).sort(), ['Harness Health Monthly', 'NightlyMeditation'], 'EXPECTS carries the jobs whose action this file does not own');
+    const none = Object.entries(install.JOBS).filter(([, j]) => !j.expects).map(([n]) => n).sort();
+    assert.deepStrictEqual(none, ['ClaudeAgentReaper', 'ClaudeLspReaper', 'Harness Health Monthly', 'WesErrorLog'], 'no expects on the JOBS entry (Harness Health Monthly has its contract in EXPECTS)');
+    assert.strictEqual(install.knownJobs().length - install.contracts(TMP_HOME).length, 3, 'reapers and WesErrorLog are counted "no contract"');
+    const dd = install.JOBS.DailyDistill;
+    assert.strictEqual(dd.execute, 'pwsh.exe');
+    assert.strictEqual(dd.args, `-NoProfile -ExecutionPolicy Bypass -File "${path.join(ROOT, 'jobs', 'daily-distill.ps1')}"`);
+    const om = install.JOBS.OpeningMoveDigest;
+    assert.strictEqual(om.execute, process.execPath);
+    assert.strictEqual(om.args, `"${path.join(ROOT, 'jobs', 'opening-move-digest.cjs')}"`);
+    assert.strictEqual(om.workingDirectory, ROOT);
+    for (const c of install.contracts(TMP_HOME)) assert.ok(path.isAbsolute(c.file) && !/[~<>]/.test(c.file) && (c.file.startsWith(TMP_HOME) || c.file.startsWith(ROOT)), `expanded: ${c.name} -> ${c.file}`);
+    assert.strictEqual(install.differs('DailyDistill', { execute: 'PWSH.EXE', args: dd.args + ' ', wd: '' }), false, 'the same action in another case and with trailing space does not differ');
+    assert.strictEqual(install.differs('DailyDistill', { execute: 'pwsh.exe', args: '-File "C:/old/jobs/daily-distill.ps1"' }), true);
+    assert.strictEqual(install.differs('NotOurs', { execute: 'x' }), null);
+  });
+
+  await test('Doctor jobs: a stale artifact FAILS with "STALE <name>: <file> <n> d old (limit <h> h)", an absent one with MISSING-ARTIFACT; all fresh passes and says "<n> jobs with contracts, <m> fresh"', () => {
+    const { jobsCheck } = require('../doctor/doctor.cjs');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agnostic-reg-jobs-'));
+    const now = Date.now();
+    const mk = (name, ageH) => { const f = path.join(dir, name + '.log'); fs.writeFileSync(f, 'x'); const t = (now - ageH * 3600e3) / 1000; fs.utimesSync(f, t, t); return { name, path: `~/${name}.log`, file: f, maxAgeH: 26 }; };
+    const list = [mk('FreshJob', 2), mk('OtherFresh', 20)];
+    const green = jobsCheck({ now, rows: [], list });
+    assert.strictEqual(green.ok, true, green.lines.join(' | '));
+    assert.ok(green.lines.some(l => /^2 jobs with contracts, 2 fresh \(\d+ known, \d+ no contract\); 0 root tasks, 0 retired or missing$/.test(l)), green.lines.join(' | '));
+    const stale = jobsCheck({ now, rows: [], list: [...list, mk('StaleJob', 3 * 24 + 1)] });
+    assert.strictEqual(stale.ok, false, 'seen failing: a 3-day-old artifact must fail');
+    assert.ok(stale.lines.includes('STALE StaleJob: ~/StaleJob.log 3 d old (limit 26 h)'), stale.lines.join(' | '));
+    assert.ok(stale.lines.some(l => /^3 jobs with contracts, 2 fresh/.test(l)), stale.lines.join(' | '));
+    const gone = jobsCheck({ now, rows: [], list: [...list, { name: 'GoneJob', path: '~/gone.log', file: path.join(dir, 'gone.log'), maxAgeH: 26 }] });
+    assert.strictEqual(gone.ok, false);
+    assert.ok(gone.lines.includes('MISSING-ARTIFACT GoneJob: ~/gone.log'), gone.lines.join(' | '));
+    const dead = jobsCheck({ now, rows: ['OldTask\tnode "C:/nowhere/at/all/x.cjs"'], list });
+    assert.ok(dead.ok === true && dead.warn === true && dead.lines.some(l => /^MISSING OldTask/.test(l)), 'a missing action target still warns, never fails: ' + dead.lines.join(' | '));
+  });
+
   // --- 9. capability-graph-guard: delegation flows downward only ---------------
 
   function graphEnv() {

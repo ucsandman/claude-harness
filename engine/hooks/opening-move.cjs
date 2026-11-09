@@ -13,7 +13,10 @@
  *            OPENING_MOVE=off or a mute prints only the off line.
  *   sources  three parallel git calls (execFile, windowsHide, 600 ms each); the repo
  *            ledger ~/.claude/state/opening-move/repos/<key>.json; the newest ring
- *            row's transcript tail (fallback for the Next line); markers D1-D4.
+ *            row's transcript tail (fallback for the Next line); markers D1-D4;
+ *            digest.json (jobs/opening-move-digest.cjs): ci rows, harness reds, the
+ *            fixture verdict that gates every "clean". Older than 60 min (or absent): a
+ *            detached refresh behind digest.lock, and the head line says so.
  *   ladder   rank(state) is pure: ten rungs, first `me` match wins; HARD_STOP_RE
  *            turns any NEXT that names a hard stop into "prepare <x>; <x> stays
  *            yours" with owner `you`, which is listed for Wes and never executed.
@@ -24,8 +27,8 @@
  * names and the stored Next text (160 chars, control characters stripped, double
  * quotes and backticks turned into '): never a
  * commit subject, transcript prose or file contents.
- * Not built yet, each printed as such: digest.json and the fixture (step 3), the
- * dashboard Today tab (step 5). turn-close.jsonl and the ledger fields
+ * Not built yet, printed as such: fleet ranking and the dashboard Today tab (step 5).
+ * turn-close.jsonl and the ledger fields
  * next/lastTest/touched print as "turn-close.cjs has not written it yet" until it has.
  */
 'use strict';
@@ -33,7 +36,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const { isMachineTurn } = require('./wakeup-guard.cjs');
 
 const HOME = process.env.USERPROFILE || os.homedir();
@@ -45,7 +48,12 @@ const P = {
   seen: path.join(STATE_DIR, 'seen.json'),
   mutes: path.join(STATE_DIR, 'mutes.json'),
   turnClose: path.join(STATE_DIR, 'turn-close.jsonl'),
+  digest: path.join(STATE_DIR, 'digest.json'),
+  lock: path.join(STATE_DIR, 'digest.lock'),
 };
+const DIGEST_STALE_MS = 60 * 60e3;
+const LOCK_STALE_MS = 10 * 60e3; // an empty or unparseable digest.lock (its writer died mid-write)
+const LOCK_MAX_MS = 30 * 60e3; // a lock whose pid still runs (a run rewrites its ts before each repair step)
 const CLAUDE_HOME = path.join(HOME, '.claude');
 const HANDOFF_INDEX = path.join(HOME, '.context-handoff-bundles', 'index.json');
 const DIAG_LOG = process.env.POST_EDIT_DIAG_LOG || path.join(CLAUDE_HOME, 'logs', 'post-edit-diagnostics.jsonl');
@@ -128,7 +136,14 @@ function ago(ms) {
   if (ms < MIN) return `${Math.round(ms / 1000)} s`;
   if (ms < HOUR) return `${Math.round(ms / MIN)} min`;
   if (ms < 2 * DAY) return `${Math.round(ms / HOUR)} h`;
-  return `${Math.round(ms / DAY)} d`;
+  return `${Math.floor(ms / DAY)} d`; // floored like the digest's "<n> d old", so chip and text agree
+}
+/** A short form cut at a word boundary (no "la" tails on the RED line), trailing punctuation dropped. */
+function shortText(s, max = 60) {
+  const c = clean(s, max + 1);
+  if (c.length <= max) return c;
+  const cut = c.slice(0, max).replace(/\s+\S*$/, '').replace(/[\s,;:]+$/, '');
+  return cut || c.slice(0, max).trim();
 }
 const pad2 = (n) => String(n).padStart(2, '0');
 function day(ms) { const d = new Date(ms); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
@@ -471,13 +486,14 @@ function rank(state) {
   const branch = nameOnly(repo.branch || 'unknown', 60);
 
   // 1 ci-red
-  if (!Array.isArray(s.ci)) skip(1, 'ci-red', 'digest: not built (step 3)');
+  if (!Array.isArray(s.ci)) skip(1, 'ci-red', s.ciWhy || 'ci: no digest rows for this repo');
   else {
     res.checked++;
     const row = s.ci.find((r) => r && r.branch === repo.branch && r.conclusion === 'failure');
     if (row) {
       const t = Date.parse(row.createdAt) || now;
-      add(1, 'ci-red', `CI failed on ${branch} at ${nameOnly(row.headSha, 7)} (${nameOnly(row.workflow, 60)}, run ${Number(row.runId) || 0}, ${ago(now - t)} ago): read the failing log and fix it.`, 'me', '10 min', `${row.headSha}|${row.runId}`, now - t, `CI red on ${branch}`);
+      const sha = row.sha || row.headSha; // digest rows carry sha (jobs/opening-move-digest.cjs parseCi)
+      add(1, 'ci-red', `CI failed on ${branch} at ${nameOnly(sha, 7)} (${nameOnly(row.workflow, 60)}, run ${Number(row.runId) || 0}, ${ago(now - t)} ago): read the failing log and fix it.`, 'me', '10 min', `${sha}|${row.runId}`, now - t, `CI red on ${branch}`);
     }
   }
   // 2 tests-red
@@ -539,12 +555,16 @@ function rank(state) {
       add(7, 'unpushed-clean', text, repo.deploysOnPush ? 'you' : 'me', '1 min', `${repo.head}|${ah.n}`, 0, `${ah.n} unpushed on ${branch}`);
     }
   }
-  // 8 harness-red (digest, step 3)
-  if (!s.digest || !Array.isArray(s.digest.red)) skip(8, 'harness-red', 'digest: not built (step 3)');
+  // 8 harness-red (digest.json red[]): every item in a harness repo; a guard-class item (a security leg
+  // false) in every session, but outside a harness repo only on the RED line, never as a NEXT "go" starts.
+  if (!s.digest || !Array.isArray(s.digest.red)) skip(8, 'harness-red', 'digest: absent');
   else {
     res.checked++;
-    const it = s.digest.red[0];
-    if (it && repo.isHarness) add(8, 'harness-red', clean(it.text, 300), 'me', '5 min', it.hash || it.text, it.ageMs || 0, clean(it.text, 60));
+    for (const it of s.digest.red) {
+      if (!it || !it.text) continue;
+      if (repo.isHarness) add(8, 'harness-red', clean(it.text, 300), 'me', '5 min', it.hash || it.text, it.ageMs || 0, shortText(it.text));
+      else if (it.guardClass === true) res.red.push({ rung: 8, kind: 'harness-red', text: clean(it.text, 300), owner: 'me', hash: sha12('harness-red', it.hash || it.text), ageMs: it.ageMs || 0, short: shortText(it.text), guard: true });
+    }
   }
   // 9 stale-dirty: dirty files older than 7 days; unchanged for 21 days = archived
   if (!st.ok) skip(9, 'stale-dirty', `git status: ${st.why}`);
@@ -573,7 +593,7 @@ function rank(state) {
   const me = [];
   for (const raw of items) {
     const it = { ...raw, ...hardStop(raw.text, raw.owner, !!repo.deploysOnPush) };
-    res.kinds[it.kind] = it.hash;
+    if (!(it.kind in res.kinds)) res.kinds[it.kind] = it.hash; // the first item of a kind (rung 8 may add several)
     if (RED_KINDS.has(it.kind)) res.red.push(it);
     if (it.owner === 'you') { res.leftForWes.push(it); continue; }
     if (demoted[it.kind] === 'demoted') { res.also.push(it); continue; }
@@ -641,6 +661,86 @@ function cleanSessions(now) {
   try { for (const f of fs.readdirSync(P.sessions)) { const p = path.join(P.sessions, f); if (now - (mtimeOf(p) || now) > 7 * DAY) try { fs.unlinkSync(p); } catch (_) {} } } catch (_) {}
 }
 
+// --- digest.json (jobs/opening-move-digest.cjs): ci rows, harness reds, the fixture verdict ---
+
+/** The digest, or null when absent or unreadable (no parseable ts). */
+function readDigest() {
+  const d = readJson(P.digest, null);
+  return d && Number.isFinite(Date.parse(d.ts)) ? d : null;
+}
+/** The fixture verdict {found, of}, only when this digest's own fixture source ran ok (never a carried-over verdict). */
+function fixtureOf(d) {
+  const f = d && d.fixture;
+  if (!(d && d.sources && d.sources.fixture && d.sources.fixture.ok === true)) return null;
+  return f && Number.isFinite(f.found) && Number.isFinite(f.of) && f.of > 0 ? { found: f.found, of: f.of } : null;
+}
+/** Is pid a running process? EPERM: it runs, under another account. */
+function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; } catch (e) { return !!e && e.code === 'EPERM'; }
+}
+/**
+ * digest.lock now: null when absent, else {pid, ageMs, stale}. A lock naming a pid is stale once that pid
+ * is dead or the lock is older than 30 min; an empty or unparseable one is aged by its mtime and stale
+ * after 10 min. Shared with jobs/opening-move-digest.cjs, so the brief and the scheduled run agree.
+ */
+function lockState(now = Date.now()) {
+  let st;
+  try { st = fs.statSync(P.lock); } catch (_) { return null; }
+  const held = readJson(P.lock, null);
+  const pid = held ? Number(held.pid) : NaN;
+  const named = Number.isInteger(pid) && pid > 0;
+  const ageMs = now - (Date.parse(held && held.ts) || st.mtimeMs);
+  return { pid: named ? pid : null, ageMs, stale: named ? !pidAlive(pid) || ageMs > LOCK_MAX_MS : ageMs > LOCK_STALE_MS };
+}
+/** Take digest.lock for pid: create it ('wx') or overwrite a stale one, then read it back. false: a live holder has it. */
+function takeLock(pid, now = Date.now()) {
+  const cur = lockState(now);
+  if (cur && !cur.stale) return false;
+  try {
+    fs.mkdirSync(STATE_DIR, { recursive: true });
+    const body = JSON.stringify({ pid, ts: new Date(now).toISOString() });
+    if (cur) fs.writeFileSync(P.lock, body); // a stale lock is taken over
+    else fs.writeFileSync(P.lock, body, { flag: 'wx' }); // fails when a sibling start took it first
+  } catch (_) { return false; }
+  const back = readJson(P.lock, null);
+  return !!back && Number(back.pid) === pid; // two takeovers of one stale lock: the last writer wins, the other backs off
+}
+/**
+ * Start a detached digest run (OPENING_MOVE_FROM=session, OPENING_MOVE_SPAWNER=this repo's key, '' in
+ * fleet mode) behind digest.lock ({pid, ts}); of two sessions starting together only one spawns.
+ */
+function refreshDigest(env, now, spawner = '') {
+  let job = env.OPENING_MOVE_DIGEST_JOB;
+  if (!job) { try { job = path.resolve(fs.realpathSync(__dirname), '..', '..', 'jobs', 'opening-move-digest.cjs'); } catch (_) { job = ''; } }
+  const held = lockState(now);
+  if (held && !held.stale) return 'refresh running';
+  if (!job || !fs.existsSync(job)) return 'refresh failed: job not found';
+  if (!takeLock(process.pid, now)) return 'refresh running';
+  try {
+    const child = spawn(process.execPath, [job], { detached: true, stdio: 'ignore', windowsHide: true, env: { ...env, OPENING_MOVE_FROM: 'session', OPENING_MOVE_SPAWNER: String(spawner || '') } });
+    child.on('error', () => {});
+    child.unref();
+    writeJson(P.lock, { pid: child.pid || null, ts: new Date(now).toISOString() });
+    return 'refresh started';
+  } catch (_) {
+    try { fs.unlinkSync(P.lock); } catch (_) {}
+    return 'refresh failed: spawn';
+  }
+}
+/** The head-line digest part: age, sources ok, fixture; a refresh is started when it is older than 60 min. */
+function digestPart(d, env, now, spawner = '') {
+  if (!d) return `digest: none yet (${refreshDigest(env, now, spawner)})`;
+  const ms = now - Date.parse(d.ts);
+  const age = ms >= MIN && ms < 3 * HOUR ? `${Math.round(ms / MIN)} min` : ago(ms); // minutes around the 60-min refresh line
+  const src = d.sources && typeof d.sources === 'object' ? Object.entries(d.sources) : [];
+  const skipped = src.filter(([, x]) => x && x.ok !== true && x.skipped).map(([n]) => nameOnly(n, 20));
+  const fx = fixtureOf(d);
+  const inner = `${src.filter(([, x]) => x && x.ok === true).length} of ${src.length} sources${skipped.length ? `, ${skipped.join(', ')} skipped` : ''}, ${fx ? `fixture ${fx.found} of ${fx.of}` : 'no fixture result'}`;
+  if (ms > DIGEST_STALE_MS) return `digest: ${age} old (${refreshDigest(env, now, spawner)}; ${inner})`;
+  return `digest ${age} old (${inner})`;
+}
+
 // --- output ---
 
 /**
@@ -690,7 +790,7 @@ async function brief(evt, opts = {}) {
   if (mutes.all === true) return OFF;
   const sid = String(evt.session_id || '');
   const found = findRepo(evt.cwd);
-  if (!found) return source === 'compact' ? null : answer('[opening-move] fleet mode (no git repo at this cwd): digest: not built (step 3), 0 of 0 repos ranked; NEXT: none.');
+  if (!found) return source === 'compact' ? null : answer(`[opening-move] fleet mode (no git repo at this cwd): ${digestPart(readDigest(), env, Date.now())}; fleet ranking not built, 0 repos ranked; NEXT: none.`);
   const top = found.top;
   const key = repoKey(top);
   const name = nameOnly(path.basename(top), 60);
@@ -741,9 +841,17 @@ async function brief(evt, opts = {}) {
   const repoInfo = { top, name, branch: head.branch, head: head.head, isAgnostic: name.toLowerCase() === 'agnostic-ai', isHarness: name.toLowerCase() === 'agnostic-ai' || normPath(top) === normPath(CLAUDE_HOME), deploysOnPush: deploysOnPush(top) };
   const staleTop = {};
   for (const [h, until] of Object.entries(rs.staleTop || {})) if (until > now) staleTop[h] = until;
+  // C: digest.json. ci rows for this repo (rank matches the branch); red items (rank applies the harness rule).
+  const digest = readDigest();
+  // Only rows fetched in the last 60 min: a scheduled run never fetches CI, so an older failure may be green by now.
+  const ciAll = digest && Array.isArray(digest.ci) ? digest.ci.filter((x) => x && x.key === key) : [];
+  const ciRows = ciAll.filter((x) => now - (Date.parse(x.fetchedAt) || 0) < DIGEST_STALE_MS);
+  const ciNewest = Math.max(0, ...ciAll.map((x) => Date.parse(x.fetchedAt) || 0));
   const state = {
     now, repo: repoInfo, git: { status, ahead },
-    ci: undefined, digest: undefined, // digest.json: step 3
+    ci: ciRows.length ? ciRows : undefined,
+    ciWhy: ciAll.length && !ciRows.length ? (ciNewest ? `ci: rows ${ago(now - ciNewest)} old` : 'ci: rows carry no fetch time') : undefined,
+    digest: digest && Array.isArray(digest.red) ? { red: digest.red } : undefined,
     lastTest: rs.lastTest && typeof rs.lastTest === 'object' ? rs.lastTest : undefined,
     touched: ring[0] && Array.isArray(ring[0].touched) ? ring[0].touched : undefined,
     next, markers, demoted: mutes.kinds || {}, staleTop,
@@ -759,8 +867,9 @@ async function brief(evt, opts = {}) {
   const markerSrc = [['handoff index', markers.handoff !== undefined], ['tasks', true], ['diagnostics log', markers.syntax !== undefined], ['inbox', inbox !== undefined]];
   const missing = markerSrc.filter(([, ok]) => !ok).map(([n]) => `${n} absent`);
   const markerPart = `markers ${markerSrc.length - missing.length} of ${markerSrc.length}${missing.length ? ` (${missing.join(', ')})` : ''}`;
+  const dPart = digestPart(digest, env, now, key);
   const builtMs = Date.now() - t0;
-  const headLine = `[opening-move] ${name} @ ${head.branch} ${head.head || '(no commits)'}. Built in ${builtMs} ms: ${gitPart} (${gitMs} ms), ring rows ${ring.length} of ${RING_MAX}, ${markerPart}, rules ${r.checked} of 10 checked; digest: not built (step 3); fixture: not built (UNVERIFIED).`;
+  const headLine = `[opening-move] ${name} @ ${head.branch} ${head.head || '(no commits)'}. Built in ${builtMs} ms: ${gitPart} (${gitMs} ms), ring rows ${ring.length} of ${RING_MAX}, ${markerPart}, rules ${r.checked} of 10 checked; ${dPart}.`;
   const lines = [{ text: headLine, keep: true }];
   if (commits && commits.length) {
     const mine = commits.filter((c) => c.mine);
@@ -793,7 +902,12 @@ async function brief(evt, opts = {}) {
   if (nothing) {
     // No upstream means nothing to be ahead of: still clean, with the count printed as unknown.
     const isClean = status.ok && !status.dirty.length && (ahead.ok ? !ahead.n : ahead.why === 'no upstream');
-    lines.push({ text: `${isClean ? 'clean (UNVERIFIED: fixture not built)' : 'no NEXT'}: ${dirtyPart}, ${aheadPart}, ${r.matched} of ${r.checked} NEXT rules matched${skipped}.`, keep: true });
+    // A clean verdict is trusted only while the digest's fixture caught all of its planted faults (L1).
+    const fx = fixtureOf(digest);
+    const cleanLabel = !fx ? 'clean (UNVERIFIED: no fixture result)' : fx.found >= fx.of ? `clean (fixture ${fx.found} of ${fx.of})` : `clean (UNVERIFIED: fixture ${fx.found} of ${fx.of})`;
+    const green = ciRows.filter((x) => x.branch === head.branch && x.conclusion === 'success' && Date.parse(x.createdAt)).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0];
+    const ciPart = green ? `, CI green ${ago(now - Date.parse(green.createdAt))} ago` : '';
+    lines.push({ text: `${isClean ? cleanLabel : 'no NEXT'}: ${dirtyPart}, ${aheadPart}${ciPart}, ${r.matched} of ${r.checked} NEXT rules matched${skipped}.`, keep: true });
   } else {
     if (r.next) {
       const chip = [r.next.kind, `rung ${r.next.rung}`, r.next.ageMs ? ago(r.next.ageMs) : null].filter(Boolean).join(', ');
@@ -803,8 +917,8 @@ async function brief(evt, opts = {}) {
     }
     lines.push({ text: `rules: ${r.matched} of ${r.checked} matched${skipped}; ${dirtyPart}, ${aheadPart}.` });
     const headline = `Opening move, ${name}: ${r.red.length} red${r.leftForWes.length ? `, ${r.leftForWes.length} left for Wes` : ''}`;
-    if (r.next) sys = `${headline}. Type go to start: ${clean(r.next.short || r.next.text, 90)}${r.next.est ? `, about ${r.next.est}` : ''}.`;
-    else if (r.leftForWes.length) sys = `${headline} (prepare only): ${clean(r.leftForWes[0].short || r.leftForWes[0].text, 90)}.`;
+    if (r.next) sys = `${headline}. Type go to start: ${clean(r.next.short || r.next.text, 90).replace(/[.,;:]+$/, '')}${r.next.est ? `, about ${r.next.est}` : ''}.`;
+    else if (r.leftForWes.length) sys = `${headline} (prepare only): ${clean(r.leftForWes[0].short || r.leftForWes[0].text, 90).replace(/[.,;:]+$/, '')}.`;
     else sys = `${headline}.`;
   }
 
@@ -955,4 +1069,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { main, brief, rank, hardStop, parseNext, repoKey, HARD_STOP_RE, GO_FIRST_RE, GO_LATER_RE, STATE_DIR };
+module.exports = { main, brief, rank, hardStop, parseNext, repoKey, lockState, takeLock, HARD_STOP_RE, GO_FIRST_RE, GO_LATER_RE, STATE_DIR };
